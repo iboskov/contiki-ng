@@ -65,15 +65,14 @@ void
 platform_init_stage_two(void)
 {
 	#if UART_CONF_ENABLED
-	uart1_init(BAUD2UBR(UART1_CONF_BAUDRATE));
-	LOG_INFO("UART1 enabled\n");
-	#if SLIP_CONF_ENABLED
-
-	#else // !SLIP_CONF_ENABLED
-	uart1_set_input(serial_line_input_byte);
-	serial_line_init();
-	LOG_INFO("UART1 as serial input enabled\n");
-	#endif // SLIP_CONF_ENABLED
+		uart1_init(BAUD2UBR(UART1_CONF_BAUDRATE));
+		LOG_INFO("UART1 enabled\n");
+		#if !SLIP_CONF_ENABLED
+			uart1_set_input(serial_line_input_byte);
+			process_start(&uart1_tx_process, NULL);
+			serial_line_init();
+			LOG_INFO("UART1 as serial input enabled\n");
+		#endif // SLIP_CONF_ENABLED
 	#endif // UART_CONF_ENABLED
 
 	node_id_init(); // node_id_init is triggered twice. Here and between stage 2 & 3.

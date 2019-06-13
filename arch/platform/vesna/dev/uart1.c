@@ -8,68 +8,70 @@
 
 #include <stdio.h>
 
-#ifndef UART1_CONF_RX_BUF_SIZE
-#define UART1_CONF_RX_BUF_SIZE	(128)
+#ifndef UART1_CONF_TX_BUF_SIZE
+#define UART1_CONF_TX_BUF_SIZE	(128)
 #endif
 
+// Pointer to function, which handles bytes.
+// There can be only one function handling incoming data.
+// Most often this will be tun/slip and serial handlers.
+static int (*input_handler)(unsigned char c) = NULL;
 
-PROCESS(uart1_rx_process, "UART1 Rx process");
 
-
-
-
-static int (*input_handler)(unsigned char chr) = NULL;
-
-static char rxBuffer[UART1_CONF_RX_BUF_SIZE];
+PROCESS(uart1_tx_process, "UART1 Tx process");
 
 
 void uart1_init(unsigned long ubr) {
+	// Initialize UART1 with vesna-drivers
     USART_InitTypeDef USART_InitStructure;
-
     USART_InitStructure.USART_BaudRate = ubr;
     USART_InitStructure.USART_WordLength = USART_WordLength_8b;
     USART_InitStructure.USART_StopBits = USART_StopBits_1;
     USART_InitStructure.USART_Parity = USART_Parity_No;
     USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
     vsnUSART_init(USART1, &USART_InitStructure);
-
     USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
 
+	// Disable buffering
 	setvbuf(stdout, NULL, _IONBF, 0);
 
+	// Clear input handler
 	input_handler = NULL;
 }
 
-void uart1_writeb(unsigned char chr) {
-    vsnUSART_write(USART1, (const char *)&chr, 1);
+void uart1_writeb(unsigned char c) {
+	// Send individual charachers over the UART1
+    vsnUSART_write(USART1, (const char *)&c, 1);
 }
 
-void uart1_set_input(int (*input) (unsigned char chr)) {
+void uart1_set_input(int (*input) (unsigned char c)) {
     input_handler = input;
 }
 
-/*
-void contiki_uart1_isr(void) {
-	process_poll(&uart1_rx_process);
-}*/
 
-
-
-PROCESS_THREAD(uart1_rx_process, ev, data)
+PROCESS_THREAD(uart1_tx_process, ev, data)
 {
 	PROCESS_BEGIN();
 
+	// Buffer stores incoming chars
+	static char txBuffer[UART1_CONF_TX_BUF_SIZE];
+
+	// store how many bytes were read
 	int count, i;
 
+	// This loop will periodically read from USART1 and send
+	// data (characters) to input_handler
 	while (1) {
 		if (input_handler != NULL) {
-			count = vsnUSART_read(USART1, rxBuffer, UART1_CONF_RX_BUF_SIZE);
+			count = vsnUSART_read(USART1, txBuffer, UART1_CONF_TX_BUF_SIZE);
 			for (i = 0; i < count; i++) {
-				input_handler((unsigned char) rxBuffer[i]);
+				input_handler((unsigned char) txBuffer[i]);
 			}
 		}
 
-		//PROCESS_YIELD_UNTIL(ev == PROCESS_EVENT_POLL);
+		// A while loop would hang the device. Contiki's macro PROCESS_PAUSE()
+		// transfers control to other processes and will return to uart1_tx_process
+		// after some time. This is a "preemptive" strategy of proto-threads.
 		PROCESS_PAUSE();
 	}
 

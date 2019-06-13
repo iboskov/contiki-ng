@@ -7,10 +7,10 @@
 #define BAUD2UBR(baud) baud
 
 
-PROCESS_NAME(uart1_rx_process);
+PROCESS_NAME(uart1_tx_process);
 
 void uart1_init(unsigned long ubr);
-void uart1_writeb(unsigned char chr);
-void uart1_set_input(int (*input)(unsigned char chr));
+void uart1_writeb(unsigned char c);
+void uart1_set_input(int (*input)(unsigned char c));
 
 #endif
