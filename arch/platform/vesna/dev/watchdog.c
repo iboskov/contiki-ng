@@ -1,17 +1,15 @@
 #include <stdio.h>
 #include "contiki-conf.h"
 #include "dev/watchdog.h"
+#include "vesna-conf.h"
 #include "stm32f10x_iwdg.h"
 
-
-#ifdef WATCHDOG_DEBUG
-#   define PRINTF(...) printf(__VA_ARGS__)
-#else
-#   define PRINTF(...)
-#endif
+#include "sys/log.h"
+#define LOG_MODULE "Watchdog"
+#define LOG_LEVEL LOG_CONF_LEVEL_WATCHDOG
 
 
-#if WATCHDOG
+#if WATCHDOG_CONF_ENABLED
 #warning "Included watchdog ..."
 
 void watchdog_init(void) {
@@ -19,13 +17,13 @@ void watchdog_init(void) {
     IWDG_SetPrescaler(IWDG_Prescaler_64);
     IWDG_SetReload(0xFFFF);
     IWDG_WriteAccessCmd(IWDG_WriteAccess_Disable);
-    PRINTF("HW watchdog initialized.\n")
+    LOG_INFO("HW watchdog initialized.\n")
 }
 
 void watchdog_start(void) {
     watchdog_init();
     IWDG_Enable();
-    PRINTF("HW watchdog started.\n");
+    LOG_INFO("HW watchdog started.\n");
 }
 
 void watchdog_stop(void) {
@@ -40,7 +38,7 @@ void watchdog_stop(void) {
 
 void watchdog_periodic(void) {
     IWDG_ReloadCounter();
-    PRINTF("watchdog_periodic triggered");
+    LOG_INFO("watchdog_periodic triggered");
 }
 
 void watchdog_reboot(void) {
@@ -52,7 +50,7 @@ void watchdog_reboot(void) {
     while (1);
 }
 
-#else // WATCHDOG
+#else // !WATCHDOG_CONF_ENABLED
 
 void watchdog_init(void) {}
 void watchdog_start(void) {}
@@ -60,4 +58,4 @@ void watchdog_periodic(void) {}
 void watchdog_stop(void) {}
 void watchdog_reboot(void) {}
 
-#endif // WATCHDOG
+#endif // WATCHDOG_CONF_ENABLED

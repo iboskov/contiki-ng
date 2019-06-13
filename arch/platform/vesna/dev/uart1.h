@@ -6,12 +6,6 @@
 
 #define BAUD2UBR(baud) baud
 
-#ifdef UART1_CONF_BAUDRATE
-#define UART1_BAUDRATE		UART1_CONF_BAUDRATE
-#else
-#define UART1_BAUDRATE		((uint32_t)115200)
-#endif
-
 
 PROCESS_NAME(uart1_rx_process);
 

@@ -1,9 +1,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#if !RF2XX_CONF_CHECKSUM
 #include <lib/crc16.h>
+#endif
 
 #include "contiki.h"
+#include "sys/log.h"
 #include "net/packetbuf.h"
 #include "net/netstack.h"
 #include "sys/energest.h"
@@ -12,42 +15,18 @@
 #include "at86rf2xx/rf2xx_hal.h"
 #include "at86rf2xx/rf2xx.h"
 
+#define LOG_MODULE "rf2xx"
+#define LOG_LEVEL LOG_CONF_LEVEL_RF2XX
+
 
 #if CONTIKI
     PROCESS(rf2xx_process, "AT86RF2xx driver");
 	//PROCESS(rf2xx_calibration_process, "AT86RF2xx calibration");
 #endif
 
-// Used debugging, where it prints filename of that particular line
-#define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
-
-// Prints log message
-#define LOG_ERROR(M, ...) do { \
-    if (RF2XX_DEBUG) fprintf(stderr, "[ERROR] " M "\n", ##__VA_ARGS__); \
-} while(0)
-
-// prints debug message
-#define LOG_DEBUG(M, ...)  do { \
-    if (RF2XX_DEBUG) fprintf(stderr, "[DEBUG] " M "\n", ##__VA_ARGS__); \
-} while(0)
-
-// prints assert message (if condition is not met)
 #define ASSERT(condition, M, ...) do { \
-    if (!(condition)) { \
-        printf("[ERROR] " M "\n", ##__VA_ARGS__); \
-    } \
+    if (!(condition)) { LOG_ERR(M, ##__VA_ARGS__); } \
 } while(0)
-
-// Used where concat of error messages is required.
-#define ERROR(M, ...) do { \
-    if (RF2XX_DEBUG) fprintf(stderr, M, ##__VA_ARGS__); \
-} while(0)
-
-// Used where concat of debug messages is required.
-#define DEBUG(M, ...) do { \
-    if (RF2XX_DEBUG) fprintf(stderr, M, ##__VA_ARGS__); \
-} while(0)
-
 
 /* Macros to access I/O functions */
 
@@ -101,11 +80,11 @@ volatile uint8_t rf2xx_last_rssi;
 //volatile uint16_t rf2xx_frame_end_time;
 
 // (optional) statistics of the radio
-#if RF2XX_STATS
+#if RF2XX_CONF_STATS
 uint32_t rf2xxStats[RF2XX_STATS_COUNT];
 #endif
 
-static const unsigned int RF2XX_CAL_PERIOD = 240; // 240s == 4min
+// static const unsigned int RF2XX_CAL_PERIOD = 240; // 240s == 4min
 
 
 /* Local structures */
@@ -370,7 +349,7 @@ spiCallback(void *cbDevStruct)
 	vsnSPI_CommonStructure *spi = cbDevStruct; // casting in separate line to simplify debugging
 	spiStatus = vsnSPI_chipSelect(spi, SPI_CS_HIGH);
 	if (VSN_SPI_SUCCESS != spiStatus) {
-		LOG_ERROR("SPI chip select error\n");
+		LOG_ERR("SPI chip select error\n");
 	}
 }
 
@@ -380,7 +359,7 @@ spiErrorCallback(void *cbDevStruct)
 {
 	vsnSPI_CommonStructure *spi = cbDevStruct;
 	vsnSPI_chipSelect(spi, SPI_CS_HIGH);
-	LOG_ERROR("SPI error callback triggered\n");
+	LOG_ERR("SPI error callback triggered\n");
 }
 
 
@@ -398,7 +377,7 @@ rf2xx_reset(void)
 
 	// Radio should now go through P_ON -> TRX_OFF state migration
 	vsnTime_delayUS(rf2xx_getTiming(TIME__VCC_TO_P_ON));
-	ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS), "TRX_OFF not reached");
+	ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS), "TRX_OFF not reached\n");
 
 	// Radio indentification process
 	// This will loop as long as radio is not recognized.
@@ -407,11 +386,11 @@ rf2xx_reset(void)
 		uint8_t partNum;
 		//uint8_t verNum;
 		do {
-			LOG_DEBUG("Detecting AT86RF2xx radio");
+			LOG_INFO("Detecting AT86RF2xx radio\n");
 
 			// Match JEDEC manufacturer ID
 			if (regRead(RG_MAN_ID_0) == RF2XX_MAN_ID_0 && regRead(RG_MAN_ID_1) == RF2XX_MAN_ID_1) {
-				LOG_DEBUG("JEDEC matches Atmel");
+				LOG_INFO("JEDEC matches Atmel\n");
 
 				// Match known radio (and sanitize radio type)
 				partNum = regRead(RG_PART_NUM);
@@ -421,7 +400,7 @@ rf2xx_reset(void)
 					case RF2XX_AT86RF231:
 					case RF2XX_AT86RF230:
 					case RF2XX_AT86RF212:
-						LOG_DEBUG("Radio part number 0x%02x", partNum);
+						LOG_INFO("Radio part number 0x%02x\n", partNum);
 						rf2xx_radio = partNum;
 					default:
 						break;
@@ -437,7 +416,7 @@ rf2xx_reset(void)
 	bitWrite(SR_CLKM_CTRL, CLKM_DISABLED);
 
 	// Enable/disable Tx autogenerating CRC16/CCITT
-	bitWrite(SR_TX_AUTO_CRC_ON, RF2XX_CHECKSUM);
+	bitWrite(SR_TX_AUTO_CRC_ON, RF2XX_CONF_CHECKSUM);
 
 	// Enable RX_SAFE mode to protect buffer while reading it
 	bitWrite(SR_RX_SAFE_MODE, 1);
@@ -447,11 +426,11 @@ rf2xx_reset(void)
 
 	// Number of CSMA retries (part of IEEE 802.15.4)
 	// Possible values [0 - 5], 6 is reserved, 7 will send immediately (no CCA)
-	bitWrite(SR_MAX_CSMA_RETRIES, RF2XX_CSMA_RETRIES);
+	bitWrite(SR_MAX_CSMA_RETRIES, RF2XX_CONF_MAX_CSMA_RETRIES);
 
 	// Number of maximum TX_ARET frame retries
 	// Possible values [0 - 15], driver will disable TX_ARET for 0
-	bitWrite(SR_MAX_FRAME_RETRIES, RF2XX_FRAME_RETRIES);
+	bitWrite(SR_MAX_FRAME_RETRIES, RF2XX_CONF_MAX_FRAME_RETRIES);
 
 	// Highest allowed backoff exponent
 	regWrite(RG_CSMA_BE, 0x80);
@@ -463,7 +442,7 @@ rf2xx_reset(void)
 	// Usable only in AUTOACK mode,
 	// Defined in IEEE 802.15.4-2006
 	// Might be causing problems with older IEEE 802.15.4-2003 compliant devices
-	bitWrite(SR_AACK_I_AM_COORD, RF2XX_I_AM_COORD);
+	bitWrite(SR_AACK_I_AM_COORD, RF2XX_CONF_I_AM_COORD);
 
 	// Other sane defaults
 	switch (rf2xx_radio) {
@@ -479,17 +458,17 @@ rf2xx_reset(void)
 
 	// Set configured channel
 	//rf2xx_setChannel(RF2XX_CHANNEL);
-    LOG_DEBUG("Channel=%u Freq=%.2fMHz", rf2xx_getChannel(), rf2xx_getFrequency());
+    LOG_INFO("Channel=%u Freq=%.2fMHz\n", rf2xx_getChannel(), rf2xx_getFrequency());
 
 	//rf2xx_setTxPower(RF2XX_TX_POWER);
-    // LOG_DEBUG("Pwr(hex): %u", rf2xx_getTxPower());
-	LOG_DEBUG("Pwr: 0x%02x", rf2xx_getTxPower());
+    // LOG_DBG("Pwr(hex): %u", rf2xx_getTxPower());
+	LOG_INFO("Pwr=0x%02x\n", rf2xx_getTxPower());
 
 	// First returned byte will be IRQ_STATUS;
 	//bitWrite(SR_SPI_CMD_MODE, SPI_CMD_MODE__IRQ_STATUS);
 
 	// Configure Promiscuous mode; Incomplete
-	//bitWrite(SR_AACK_PROM_MODE, RF2XX_PROMISCUOUS);
+	//bitWrite(SR_AACK_PROM_MODE, RF2XX_CONF_PROMISCUOUS);
 	//bitWrite(SR_AACK_UPLD_RES_FT, 1);
 	//bitWrite(SR_AACK_FLTR_RES_FT, 1);
 
@@ -526,7 +505,7 @@ rf2xx_init(void)
 		RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
 
         // Quirk: Disable JTAG since it share pin with RST (fixed in ISMTV v1.1 hardware)
-        LOG_DEBUG("Disable JTAG in 5 seconds\n");
+        LOG_INFO("Disable JTAG in 5 seconds\n");
         vsnTime_delayS(5);
 		GPIO_PinRemapConfig(GPIO_Remap_SWJ_JTAGDisable, ENABLE);
 	#endif
@@ -620,35 +599,31 @@ int
 rf2xx_prepare(const void *payload, unsigned short payload_len)
 {
     if (payload_len > RF2XX_MAX_FRAME_SIZE - RF2XX_CRC_SIZE) {
-        LOG_ERROR(
-			"Payload larger than radio buffer: %u > %u",
-			payload_len,
-			RF2XX_MAX_FRAME_SIZE - RF2XX_CRC_SIZE
-		);
-        return 0;
+        LOG_ERR("Payload larger than radio buffer: %u > %u\n", payload_len, RF2XX_MAX_FRAME_SIZE - RF2XX_CRC_SIZE);
+        return RADIO_TX_ERR;
     }
 
-    DEBUG("[rf2xxPrepare] ");
+    LOG_DBG("[rf2xxPrepare] ");
 
     if (flags.SLEEP) {
         rf2xx_wakeUp(); // Wake-up radio if it is asleep
-        DEBUG("WakeUp ");
+        LOG_DBG_("WakeUp ");
     }
 
 	// Force radio into TRX_OFF
     regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
-    DEBUG("TRX_OFF ");
+    LOG_DBG_("TRX_OFF ");
     vsnTime_delayUS(rf2xx_getTiming(TIME__FORCE_TRX_OFF));
 
-    ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS), "TRX_OFF not reached");
+    ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS), "TRX_OFF not reached\n");
 
 	// Depending on FRAME_RETRIES use extended or basic radio mode
-    if (RF2XX_FRAME_RETRIES > 0) {
+    if (RF2XX_CONF_MAX_FRAME_RETRIES > 0) {
         regWrite(RG_TRX_STATE, TRX_CMD_TX_ARET_ON); // extended mode
-        DEBUG("TX_ARET ");
+        LOG_DBG_("TX_ARET ");
     } else {
         regWrite(RG_TRX_STATE, TRX_CMD_PLL_ON);
-        DEBUG("PLL_ON ");
+        LOG_DBG_("PLL_ON ");
     }
 
     vsnTime_delayUS(rf2xx_getTiming(TIME__TRX_OFF_TO_PLL_ON));
@@ -666,12 +641,12 @@ rf2xx_prepare(const void *payload, unsigned short payload_len)
 
         memcpy(txData+2, payload, length); // copy into appropriate position
 
-        #if !RF2XX_CHECKSUM // if we disable radio's built-in CRC check for some reason
+        #if !RF2XX_CONF_CHECKSUM // if we disable radio's built-in CRC check for some reason
         {
             uint16_t crc = crc16_data((uint8_t *)payload, length, 0x00);
             memcpy(txData+2+payload_len, &crc, RF2XX_CRC_SIZE); // copy CRC after actual data
             length += RF2XX_CRC_SIZE;
-            DEBUG("CRC ");
+            LOG_DBG_("CRC ");
         }
         #endif
 
@@ -679,16 +654,16 @@ rf2xx_prepare(const void *payload, unsigned short payload_len)
         do {
             status = vsnSPI_checkSPIstatus(rf2xxSPI);
             if (!vsnTime_checkTimeout(&timeout)) {
-                LOG_DEBUG("Timeout waiting SPI");
+                LOG_WARN("Timeout waiting SPI\n");
                 return 0;
             }
         } while (status & (VSN_SPI_COM_IN_PROGRESS | VSN_SPI_BUS_BUSY));
 
-        ASSERT(0 == getCS(), "Something wrong with SPI-CS");
+        ASSERT(0 == getCS(), "Something wrong with SPI-CS\n");
         setCS();
 
         // Start sending to radio buffer
-        DEBUG("%ubytes ", length);
+        LOG_DBG_("%ubytes ", length);
         status = vsnSPI_transferDataTXRX(rf2xxSPI, txData, rxData, 2 + length, spiCallback);
 
 
@@ -712,7 +687,7 @@ rf2xx_prepare(const void *payload, unsigned short payload_len)
         }
     }
 
-    DEBUG("\n");
+    LOG_DBG_("\n");
 
     return payload_len;
 }
@@ -737,14 +712,14 @@ rf2xx_transmit(unsigned short transmit_len)
 	vsnTime_setTimeout(&timeout, 200);
 	while (!flags.TRX_END) { // will be released inside ISR
 		if (!vsnTime_checkTimeout(&timeout)) {
-			LOG_ERROR("Timeout waiting TRX_END\n");
+			LOG_ERR("Timeout waiting TRX_END\n");
 			flags.TRX_END = 1;
 		}
 	};
 
     ENERGEST_OFF(ENERGEST_TYPE_TRANSMIT);
 
-    if (RF2XX_FRAME_RETRIES > 0) {
+    if (RF2XX_CONF_MAX_FRAME_RETRIES > 0) {
         trac = bitRead(SR_TRAC_STATUS);
     } else {
         trac = TRAC_SUCCESS;
@@ -789,19 +764,19 @@ rf2xx_read(void *buf, unsigned short buf_len)
     uint8_t txData[2 + RF2XX_MAX_FRAME_SIZE + RF2XX_LQI_SIZE];
     txData[0] = CMD_FB | CMD_READ;
 
-    DEBUG("[rf2xxRead] ");
+    LOG_DBG("[rf2xxRead] ");
 
     vsnTime_setTimeout(&timeout, 200);
     do {
         status = vsnSPI_checkSPIstatus(rf2xxSPI);
         if (!vsnTime_checkTimeout(&timeout)) {
             RF2XX_STATS_ADD(spiError);
-            LOG_DEBUG("Timeout waiting SPI");
+            LOG_WARN("Timeout waiting SPI\n");
             return 0;
         }
     } while (status & (VSN_SPI_COM_IN_PROGRESS | VSN_SPI_BUS_BUSY));
 
-    DEBUG("SPI ");
+    LOG_DBG_("SPI ");
 
     setCS();
     status = vsnSPI_transferDataTXRX(rf2xxSPI, txData, rxData, 2 + RF2XX_MAX_FRAME_SIZE + RF2XX_LQI_SIZE, spiCallback);
@@ -810,7 +785,7 @@ rf2xx_read(void *buf, unsigned short buf_len)
     if (status != VSN_SPI_SUCCESS) {
         if (status != VSN_SPI_COM_IN_PROGRESS) {
             RF2XX_STATS_ADD(spiError);
-            DEBUG("ERROR\n");
+            LOG_DBG_("ERROR\n");
             return 0;
         }
 
@@ -820,14 +795,14 @@ rf2xx_read(void *buf, unsigned short buf_len)
             status = vsnSPI_checkSPIstatus(rf2xxSPI);
             if (!vsnTime_checkTimeout(&timeout)) {
                 RF2XX_STATS_ADD(spiError);
-                DEBUG("ERROR\n");
+                LOG_DBG_("ERROR\n");
                 return 0;
             }
         }
 
         if (status != VSN_SPI_SUCCESS) {
             RF2XX_STATS_ADD(spiError);
-            DEBUG("ERROR\n");
+            LOG_DBG_("ERROR\n");
             return 0;
         }
     }
@@ -837,15 +812,15 @@ rf2xx_read(void *buf, unsigned short buf_len)
     length = rxData[1];
 
     if (length < RF2XX_MIN_FRAME_SIZE || length > RF2XX_MAX_FRAME_SIZE) {
-        DEBUG("!%u\n", length);
+        LOG_DBG_("!%u\n", length);
         return 0;
     }
 
     length -= RF2XX_CRC_SIZE; // CRC is part of IEEE 802.15.4 frame
 
-    #if !RF2XX_CHECKSUM
+    #if !RF2XX_CONF_CHECKSUM
     {
-        DEBUG("CRC ");
+        LOG_DBG_("CRC ");
         // received CRC
         uint16_t crc;
         memcpy(&crc, rxData + 2 + length, RF2XX_CRC_SIZE);
@@ -854,17 +829,17 @@ rf2xx_read(void *buf, unsigned short buf_len)
         uint16_t _crc = crc16_data((const uint8_t *)(rxData + 2), length, 0x00);
 
         if (crc != _crc) {
-            DEBUG("invalid\n");
+            LOG_DBG_("invalid\n");
             return 0;
         }
     }
     #endif
 
     memcpy(buf, rxData+2, length); // Copy packet to buffer
-    DEBUG("%ubytes ", length);
+    LOG_DBG_("%ubytes ", length);
 
     // Read TRAC status either if it is not mandatory (mainly for debugging)
-    #if RF2XX_AUTOACK
+    #if RF2XX_CONF_AUTOACK
         trac = bitRead(SR_TRAC_STATUS);
     #else
         trac = TRAC_SUCCESS;
@@ -873,30 +848,30 @@ rf2xx_read(void *buf, unsigned short buf_len)
     switch (trac) {
     case TRAC_SUCCESS:
         // Everything is OK. CRC matches.
-        DEBUG("TRAC=OK ");
+        LOG_DBG_("TRAC=OK ");
         break;
 
     case TRAC_SUCCESS_WAIT_FOR_ACK:
         // TODO: How do we inform CONTIKI about NO-ACK?
-        DEBUG("TRAC=NO-ACK ");
+        LOG_DBG_("TRAC=NO-ACK ");
         break;
 
     case TRAC_INVALID:
         // Something went wrong with frame.
         // Read too fast? Buffer issues?
         // There is a change that frame is corrupted. No sense to make LQI.
-        DEBUG("TRAC=INVALID ");
+        LOG_DBG_("TRAC=INVALID ");
         return 0;
 
     default:
         // Any other state is invalid in RX mode
-        DEBUG("TRAC=%u (INVALID) ", trac);
+        LOG_DBG_("TRAC=%u (INVALID) ", trac);
         return 0;
     }
 
     rf2xx_last_lqi = rxData[2 + length + RF2XX_CRC_SIZE];
 
-    DEBUG("LQI=%u; RSSI=%u;\n", rf2xx_last_lqi, rf2xx_last_rssi);
+    LOG_DBG_("LQI=%u; RSSI=%u;\n", rf2xx_last_lqi, rf2xx_last_rssi);
 
     packetbuf_set_attr(PACKETBUF_ATTR_LINK_QUALITY, rf2xx_last_lqi);
     packetbuf_set_attr(PACKETBUF_ATTR_RSSI, rf2xx_last_rssi);
@@ -911,7 +886,7 @@ int
 rf2xx_cca(void)
 {
     // Return 1 for IDLE, 0 for BUSY ...
-    #if RF2XX_FRAME_RETRIES
+    #if RF2XX_CONF_MAX_FRAME_RETRIES
         // Running in extended mode TX_ARET state will take care of CCA
         return 1;
     #else
@@ -928,7 +903,7 @@ rf2xx_cca(void)
         regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
         vsnTime_delayUS(rf2xx_getTiming(TIME__FORCE_TRX_OFF));
 
-        ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS), "TRX_OFF not reached");
+        ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS), "TRX_OFF not reached\n");
 
 
         bitWrite(SR_RX_PDT_DIS, 1); // disable reception; prevent interrupts; it will perform sensing;
@@ -960,7 +935,7 @@ int
 rf2xx_receiving_packet(void)
 {
     //int receivingPacket = (flags.RX_START && vsnTime_checkTimeout(&rxTimeout)) && !flags.TRX_END;
-    //LOG_DEBUG("receivingPacket: %u", receivingPacket);
+    //LOG_DBG("receivingPacket: %u", receivingPacket);
     //return receivingPacket;
     return (flags.RX_START && vsnTime_checkTimeout(&rxTimeout)) && !flags.TRX_END;
 }
@@ -970,7 +945,7 @@ int
 rf2xx_pending_packet(void)
 {
     //int pendingPacket = vsnTime_checkTimeout(&rxTimeout) && flags.TRX_END;
-    //LOG_DEBUG("PendingPacket: %u", pendingPacket);
+    //LOG_DBG("PendingPacket: %u", pendingPacket);
     //return pendingPacket;
     return vsnTime_checkTimeout(&rxTimeout) && flags.TRX_END;
 }
@@ -981,11 +956,11 @@ rf2xx_on(void)
 {
     uint8_t dummy __attribute__((unused));
 
-    DEBUG("[rf2xxOn] ");
+    LOG_DBG("[rf2xxOn] ");
 
     if (flags.SLEEP) {
         rf2xx_wakeUp();
-        DEBUG("WakeUp ");
+        LOG_DBG_("WakeUp ");
     }
 
     uint8_t state = bitRead(SR_TRX_STATUS);
@@ -997,33 +972,33 @@ rf2xx_on(void)
         case TRX_STATUS_BUSY_RX:
         case TRX_STATUS_BUSY_RX_AACK:
         case TRX_STATUS_BUSY_RX_AACK_NOCLK:
-            DEBUG("noMigrate ");
+            LOG_DBG_("noMigrate ");
             break;
 
         default:
             //clearSLPTR();
             regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
             vsnTime_delayUS(rf2xx_getTiming(TIME__FORCE_TRX_OFF));
-            DEBUG("TRX_OFF ");
+            LOG_DBG_("TRX_OFF ");
             flags.value = 0; // clear at this point as it cannot be in any of the sub-states.
 
-			#if RF2XX_AUTOACK
+			#if RF2XX_CONF_AUTOACK
 			regWrite(RG_TRX_STATE, TRX_CMD_RX_AACK_ON);
-			DEBUG("RX_AACK ");
+			LOG_DBG_("RX_AACK ");
 			#else
 			regWrite(RG_TRX_STATE, TRX_CMD_RX_ON);
-			DEBUG("RX_ON ");
+			LOG_DBG_("RX_ON ");
 			#endif
 
             vsnTime_delayUS(rf2xx_getTiming(TIME__TRX_OFF_TO_RX_ON));
             dummy = regRead(RG_IRQ_STATUS); // clear, because PLL_LOCK was triggered
-            ASSERT(flags.PLL_LOCK, "PLL_LOCK should be ON");
+            ASSERT(flags.PLL_LOCK, "PLL_LOCK should be ON\n");
 
             ENERGEST_ON(ENERGEST_TYPE_LISTEN);
             break;
     }
 
-    DEBUG("\n");
+    LOG_DBG_("\n");
 
     return 1;
 }
@@ -1082,7 +1057,7 @@ void rf2xx_isr(void) {
 
 		RF2XX_STATS_ADD(rxDetected);
 
-        #if !RF2XX_AUTOACK
+        #if !RF2XX_CONF_AUTOACK
         // When using non-extended mode, RSSI should be read on RX_START IRQ
         rf2xx_last_rssi = 3 * bitRead(SR_RSSI);
         #endif
@@ -1101,7 +1076,7 @@ void rf2xx_isr(void) {
 	if (irq.IRQ3_TRX_END) {
 		flags.TRX_END = 1;
 
-        #if RF2XX_AUTOACK
+        #if RF2XX_CONF_AUTOACK
         // In extended mode IRQ3_TRX_END is best time to read RSSI
         rf2xx_last_rssi = regRead(RG_PHY_ED_LEVEL);
         #endif
@@ -1168,13 +1143,13 @@ PROCESS_THREAD(rf2xx_process, ev, data)
 	int len;
 	PROCESS_BEGIN();
 
-	LOG_DEBUG("AT86RF2xx driver process started");
+	LOG_INFO("AT86RF2xx driver process started!\n");
 
 	while(1) {
 		PROCESS_YIELD_UNTIL(ev == PROCESS_EVENT_POLL);
 
         RF2XX_STATS_ADD(rxToStack);
-		LOG_DEBUG("calling receiver callback\n");
+		LOG_DBG("calling receiver callback\n");
 
 		packetbuf_clear();
 		//packetbuf_set_attr(PACKETBUF_ATTR_TIMESTAMP, last_packet_timestamp);
@@ -1190,7 +1165,7 @@ PROCESS_THREAD(rf2xx_process, ev, data)
 PROCESS_THREAD(rf2xx_calibration_process, ev, data)
 {
 	PROCESS_BEGIN();
-	LOG_DEBUG("AT86RF2xx calibration process started");
+	LOG_DBG("AT86RF2xx calibration process started");
 	while(1) {
 		rf2xx_calibration();
 		PROCESS_PAUSE();
@@ -1223,7 +1198,7 @@ static radio_result_t get_value(radio_param_t param, radio_value_t *value) {
 			return RADIO_RESULT_OK;
 
 		case RADIO_PARAM_TX_MODE:
-			#if RF2XX_FRAME_RETRIES
+			#if RF2XX_CONF_MAX_FRAME_RETRIES
 				*value = 0; // will be handled by TX_ARET
 			#else
 				// Radio in traditional TX_ON, CCA has to be done manually
@@ -1348,20 +1323,20 @@ void rf2xx_setChannel(uint8_t ch) {
 		case RF2XX_AT86RF230:
 			if (ch >= 11 && ch <= 26) {
 				bitWrite(SR_CHANNEL, ch);
-				LOG_DEBUG("On channel %u", ch);
 			}
 			break;
 
 		case RF2XX_AT86RF212:
 			if (ch < 11) {
 				bitWrite(SR_CHANNEL, ch);
-				LOG_DEBUG("On channel %u", ch);
 			}
 			break;
 
 		default:
 			break;
 	}
+
+	LOG_INFO("Channel=%u Freq=%.2fMHz\n", rf2xx_getChannel(), rf2xx_getFrequency());
 }
 
 uint8_t rf2xx_getChannel(void) {
@@ -1399,7 +1374,7 @@ uint8_t rf2xx_getTxPower(void) {
 void rf2xx_setPanId(uint16_t pan) {
 	regWrite(RG_PAN_ID_0, pan & 0xFF);
 	regWrite(RG_PAN_ID_1, pan >> 8);
-	LOG_DEBUG("PAN==0x%02x", pan);
+	LOG_INFO("PAN == 0x%02x\n", pan);
 }
 
 
@@ -1418,7 +1393,7 @@ uint16_t rf2xx_getShortAddr(void) {
 void rf2xx_setShortAddr(uint16_t addr) {
 	regWrite(RG_SHORT_ADDR_0, addr & 0xFF);
 	regWrite(RG_SHORT_ADDR_1, addr >> 8);
-	LOG_DEBUG("Short addr == 0x%02x");
+	LOG_INFO("Short addr == 0x%02x\n", addr);
 }
 
 void rf2xx_setLongAddr(const uint8_t * addr, uint8_t len) {
@@ -1478,7 +1453,7 @@ uint8_t rf2xx_RSSI(void) {
 
 
 uint8_t rf2xx_rssi(void) {
-	#if RF2XX_AUTOACK
+	#if RF2XX_CONF_AUTOACK
 		return rf2xx_ED_LEVEL();
 	#else
 		return rf2xx_RSSI();
@@ -1523,7 +1498,7 @@ void rf2xx_calibration(void)
 		case TRX_STATUS_TX_ARET_ON:
 		case TRX_STATUS_TX_ON:
 			lastCalibration = now;
-			LOG_DEBUG("Triggered calibration ...");
+			LOG_DBG("Triggered calibration ...");
 
 			// Temporary disable radio reception in any Rx state
 			bitWrite(SR_RX_PDT_DIS, 1); // radio will ignore incoming packages
@@ -1536,25 +1511,25 @@ void rf2xx_calibration(void)
 
 			while(!flags.PLL_LOCK) {
 				if (!vsnTime_checkTimeout(&timeout)) {
-					LOG_ERROR("Callibration error. PLL_LOCK was not triggered");
+					LOG_ERR("Callibration error. PLL_LOCK was not triggered");
 					break;
 				}
 			}
 
 			bitWrite(SR_RX_PDT_DIS, 0); // Enable reception back again
 
-			LOG_DEBUG("Calibration complete");
+			LOG_DBG("Calibration complete");
 			break;
 
 		default:
-			LOG_DEBUG("Callibration: state=0x%02x", curState);
+			LOG_DBG("Callibration: state=0x%02x", curState);
 			break;
 	}
 }
 */
 /*
 void rf2xx_calibration(void) {
-	LOG_DEBUG("Running calibration procedure ...\n");
+	LOG_DBG("Running calibration procedure ...\n");
 	// If radio is more than 5 minutes in any Tx/Rx mode, callibration
 	// loop has to be triggered manually.
 
@@ -1579,7 +1554,7 @@ void rf2xx_calibration(void) {
 			vsnTime_delayUS(30); // TODO: Put this value into radio specific settings
 			break;
 		default:
-			LOG_ERROR("Filter tuning calibration was skipped, due to incorrect radio state\n");
+			LOG_ERR("Filter tuning calibration was skipped, due to incorrect radio state\n");
 			break;
 	}
 
@@ -1593,7 +1568,7 @@ void rf2xx_calibration(void) {
 			vsnTime_delayUS(80); // TODO: Put timings into radio specific settings
 			break;
 		default:
-			LOG_ERROR("Center frequency and delay cell calibration was skipped, due to incorrect radio state\n");
+			LOG_ERR("Center frequency and delay cell calibration was skipped, due to incorrect radio state\n");
 			break;
 	}
 
@@ -1604,7 +1579,7 @@ void rf2xx_calibration(void) {
 	// Enable reception back again
 	bitWrite(SR_RX_PDT_DIS, 0);
 
-	LOG_DEBUG("Calibration complete. Radio is currently in TRX_OFF\n");
+	LOG_DBG("Calibration complete. Radio is currently in TRX_OFF\n");
 }
 */
 

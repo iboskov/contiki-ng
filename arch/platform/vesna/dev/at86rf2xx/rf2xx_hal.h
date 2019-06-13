@@ -80,13 +80,13 @@ enum {
 	RF2XX_STATS_COUNT
 };
 
-#if RF2XX_STATS
+#if RF2XX_CONF_STATS
 	extern uint32_t rf2xxStats[RF2XX_STATS_COUNT];
 #endif // RF2XX_DEBUG
 
-#define RF2XX_STATS_ADD(x)		do { if (RF2XX_STATS) rf2xxStats[x]++; } while(0)
-#define RF2XX_STATS_GET(x)		((RF2XX_STATS) ? (rf2xxStats[x]) : 0)
-#define RF2XX_STATS_RESET()		do { if (RF2XX_STATS) memset(rf2xxStats, 0, sizeof(rf2xxStats[0]) * RF2XX_STATS_COUNT); } while(0)
+#define RF2XX_STATS_ADD(x)		do { if (RF2XX_CONF_STATS) rf2xxStats[x]++; } while(0)
+#define RF2XX_STATS_GET(x)		((RF2XX_CONF_STATS) ? (rf2xxStats[x]) : 0)
+#define RF2XX_STATS_RESET()		do { if (RF2XX_CONF_STATS) memset(rf2xxStats, 0, sizeof(rf2xxStats[0]) * RF2XX_STATS_COUNT); } while(0)
 
 
 

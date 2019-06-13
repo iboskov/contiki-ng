@@ -18,6 +18,8 @@
 #include "net/linkaddr.h"
 #include "lib/crc16.h"
 
+#include "vesna-conf.h"
+
 #include "sys/platform.h"
 #include "sys/node-id.h"
 
@@ -62,15 +64,22 @@ platform_init_stage_one(void)
 void
 platform_init_stage_two(void)
 {
-	#if UART_CONF_ENABLE
-	uart1_init(BAUD2UBR(UART1_BAUDRATE));
+	#if UART_CONF_ENABLED
+	uart1_init(BAUD2UBR(UART1_CONF_BAUDRATE));
+	LOG_INFO("UART1 enabled\n");
+	#if SLIP_CONF_ENABLED
+
+	#else // !SLIP_CONF_ENABLED
 	uart1_set_input(serial_line_input_byte);
-	#endif
-
 	serial_line_init();
+	LOG_INFO("UART1 as serial input enabled\n");
+	#endif // SLIP_CONF_ENABLED
+	#endif // UART_CONF_ENABLED
 
-	const uint16_t id = crc16_data(STM32F1_UUID.u8, sizeof(STM32F1_UUID.u8), 0);
-	const uint8_t extAddr[8] = { 0, 0x12, 0x4B, 0, 0, 0x06, (id & 0xff), (id >> 8) };
+	node_id_init(); // node_id_init is triggered twice. Here and between stage 2 & 3.
+
+	// TODO: Too much copying ... change only neccessery bits of linkaddr_node_addr
+	const uint8_t extAddr[8] = { 0, 0x12, 0x4B, 0, 0, 0x06, (node_id & 0xff), (node_id >> 8) };
 
 	// populate linkaddr_node_addr. Maintain endianess;
 	// This sets MAC address

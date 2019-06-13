@@ -3,38 +3,44 @@
 
 #include "contiki-net.h"
 
+/* Default log level */
+#ifndef LOG_CONF_LEVEL_RF2XX
+#define LOG_CONF_LEVEL_RF2XX            LOG_LEVEL_NONE
+#endif /* LOG_CONF_LEVEL_RF2XX */
 
-#ifndef RF2XX_DEBUG
-#define RF2XX_DEBUG				(3)
-#endif
 
-#ifndef RF2XX_STATS
-#define RF2XX_STATS				(1)
-#endif
+/* Enable/disable radio stats collecting (see rf2xxStats[]) */
+#ifndef RF2XX_CONF_STATS
+#define RF2XX_CONF_STATS		        (1)
+#endif /* RF2XX_CONF_STATS */
 
-#ifndef RF2XX_CSMA_RETRIES
-#define RF2XX_CSMA_RETRIES		(4)
-#endif
+/* Number of CSMA retries 0-5, 6 = reserved, 7 = immediately without CSMA/CA */
+#ifndef RF2XX_CONF_MAX_CSMA_RETRIES
+#define RF2XX_CONF_MAX_CSMA_RETRIES	    (5)
+#endif /* RF2XX_CONF_CSMA_RETRIES */
 
-#ifndef RF2XX_FRAME_RETRIES
-#define RF2XX_FRAME_RETRIES		(15)
-#endif
+/* Number of frame retries, if no ACK, 1-15, 0 = driver will not use extended mode */
+#ifndef RF2XX_CONF_MAX_FRAME_RETRIES
+#define RF2XX_CONF_MAX_FRAME_RETRIES    (15)
+#endif /* RF2XX_CONF_FRAME_RETRIES */
 
-#ifndef RF2XX_AUTOACK
-#define RF2XX_AUTOACK			(1)
-#endif
+/* Enable/disable radio's auto-acknowledge capability */
+#ifndef RF2XX_CONF_AUTOACK
+#define RF2XX_CONF_AUTOACK			    (1)
+#endif /* RF2XX_CONF_AUTOACK */
 
-#ifndef RF2XX_CHECKSUM
-#define RF2XX_CHECKSUM			(1)
-#endif
+/* Enable/disable CRC operations on radio radio */
+#ifndef RF2XX_CONF_CHECKSUM
+#define RF2XX_CONF_CHECKSUM		        (1)
+#endif /* RF2XX_CONF_CHECKSUM */
 
-#ifndef RF2XX_PROMISCUOUS
-#define RF2XX_PROMISCUOUS		(0)
-#endif
+#ifndef RF2XX_CONF_PROMISCUOUS
+#define RF2XX_CONF_PROMISCUOUS		    (0)
+#endif /* RF2XX_CONF_PROMISCUOUS */
 
-#ifndef RF2XX_I_AM_COORD
-#define RF2XX_I_AM_COORD		(0)
-#endif
+#ifndef RF2XX_CONF_I_AM_COORD
+#define RF2XX_CONF_I_AM_COORD		    (0)
+#endif /* RF2XX_CONF_I_AM_COORD */
 
 
 extern const struct radio_driver rf2xx_driver;

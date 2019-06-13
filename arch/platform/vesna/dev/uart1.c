@@ -8,12 +8,8 @@
 
 #include <stdio.h>
 
-#ifndef UART1_RX_BUF_SIZE
-#define UART1_RX_BUF_SIZE	(128)
-#endif
-
-#ifndef UART1_BAUDRATE
-#define UART1_BAUDRATE (unsigned long)(115200)
+#ifndef UART1_CONF_RX_BUF_SIZE
+#define UART1_CONF_RX_BUF_SIZE	(128)
 #endif
 
 
@@ -24,7 +20,7 @@ PROCESS(uart1_rx_process, "UART1 Rx process");
 
 static int (*input_handler)(unsigned char chr) = NULL;
 
-static char rxBuffer[UART1_RX_BUF_SIZE];
+static char rxBuffer[UART1_CONF_RX_BUF_SIZE];
 
 
 void uart1_init(unsigned long ubr) {
@@ -67,7 +63,7 @@ PROCESS_THREAD(uart1_rx_process, ev, data)
 
 	while (1) {
 		if (input_handler != NULL) {
-			count = vsnUSART_read(USART1, rxBuffer, UART1_RX_BUF_SIZE);
+			count = vsnUSART_read(USART1, rxBuffer, UART1_CONF_RX_BUF_SIZE);
 			for (i = 0; i < count; i++) {
 				input_handler((unsigned char) rxBuffer[i]);
 			}
