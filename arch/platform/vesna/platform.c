@@ -89,9 +89,6 @@ platform_init_stage_two(void)
 void
 platform_init_stage_three(void)
 {
-	//set_rf_parameters();
-	//const uint8_t extAddr[8] = { 0, 0x12, 0x4B, 0, 0, 0x06, (node_id & 0xff), (node_id >> 8) };
-
 	NETSTACK_RADIO.set_value(RADIO_PARAM_PAN_ID, IEEE802154_PANID);
 	NETSTACK_RADIO.set_value(RADIO_PARAM_16BIT_ADDR, node_id);
 	NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL, IEEE802154_DEFAULT_CHANNEL);
