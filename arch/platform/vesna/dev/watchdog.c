@@ -4,26 +4,29 @@
 #include "vesna-conf.h"
 #include "stm32f10x_iwdg.h"
 
+#ifndef LOG_CONF_LEVEL_WATCHDOG
+#define LOG_CONF_LEVEL_WATCHDOG LOG_LEVEL_NONE
+#endif
+
 #include "sys/log.h"
 #define LOG_MODULE "Watchdog"
 #define LOG_LEVEL LOG_CONF_LEVEL_WATCHDOG
 
 
 #if WATCHDOG_CONF_ENABLED
-#warning "Included watchdog ..."
 
 void watchdog_init(void) {
     IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
     IWDG_SetPrescaler(IWDG_Prescaler_64);
     IWDG_SetReload(0xFFFF);
     IWDG_WriteAccessCmd(IWDG_WriteAccess_Disable);
-    LOG_INFO("HW watchdog initialized.\n")
+    LOG_DBG("Initialized\n");
 }
 
 void watchdog_start(void) {
     watchdog_init();
     IWDG_Enable();
-    LOG_INFO("HW watchdog started.\n");
+    LOG_DBG("Started\n");
 }
 
 void watchdog_stop(void) {
@@ -38,7 +41,7 @@ void watchdog_stop(void) {
 
 void watchdog_periodic(void) {
     IWDG_ReloadCounter();
-    LOG_INFO("watchdog_periodic triggered");
+    LOG_DBG("Tick\n");
 }
 
 void watchdog_reboot(void) {
