@@ -8,10 +8,6 @@
 
 #include <stdio.h>
 
-#ifndef UART1_CONF_TX_BUF_SIZE
-#define UART1_CONF_TX_BUF_SIZE	(128)
-#endif
-
 // Pointer to function, which handles bytes.
 // There can be only one function handling incoming data.
 // Most often this will be tun/slip and serial handlers.
@@ -51,28 +47,23 @@ void uart1_set_input(int (*input) (unsigned char c)) {
 
 PROCESS_THREAD(uart1_tx_process, ev, data)
 {
+	unsigned char buf;
+
 	PROCESS_BEGIN();
 
-	// Buffer stores incoming chars
-	static char txBuffer[UART1_CONF_TX_BUF_SIZE];
-
-	// store how many bytes were read
-	int count, i;
-
-	// This loop will periodically read from USART1 and send
-	// data (characters) to input_handler
+	// This loop will check UART1 buffer for incoming data (characters), then
+	// forward it to input_handler function.
 	while (1) {
-		if (input_handler != NULL) {
-			count = vsnUSART_read(USART1, txBuffer, UART1_CONF_TX_BUF_SIZE);
-			for (i = 0; i < count; i++) {
-				input_handler((unsigned char) txBuffer[i]);
-			}
-		}
-
 		// A while loop would hang the device. Contiki's macro PROCESS_PAUSE()
-		// transfers control to other processes and will return to uart1_tx_process
+		// transfers control to other processes and will return to this one
 		// after some time. This is a "preemptive" strategy of proto-threads.
 		PROCESS_PAUSE();
+
+		if (input_handler != NULL) {
+			while (vsnUSART_read(USART1, &buf, 1)) {
+				input_handler(buf);
+			}
+		}
 	}
 
 	PROCESS_END();
