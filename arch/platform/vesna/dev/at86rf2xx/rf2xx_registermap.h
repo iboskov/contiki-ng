@@ -187,21 +187,31 @@ enum {
 #define SR_IRQ_MASK			RG_IRQ_MASK, 0xFF, 0
 
 enum {
-	IRQ0_PLL_LOCK		= (uint8_t)1 << 0,
-	IRQ1_PLL_UNLOCK		= (uint8_t)1 << 1,
-	IRQ2_RX_START		= (uint8_t)1 << 2,
-	IRQ3_TRX_END		= (uint8_t)1 << 3,
-	IRQ4_CCA_ED_DONE	= (uint8_t)1 << 4,
-	IRQ4_AWAKE_END		= (uint8_t)1 << 4, // !typo; IRQ4 flag is for both CCA_ED_DONE and AWAKE_END
-	IRQ5_AMI			= (uint8_t)1 << 5,
-	IRQ6_TRX_UR			= (uint8_t)1 << 6,
-	IRQ7_BAT_LOW		= (uint8_t)1 << 7,
+	IRQ0_PLL_LOCK		= 1 << 0,
+	IRQ1_PLL_UNLOCK		= 1 << 1,
+	IRQ2_RX_START		= 1 << 2,
+	IRQ3_TRX_END		= 1 << 3,
+	IRQ4_CCA_ED_DONE	= 1 << 4,
+	IRQ4_AWAKE_END		= 1 << 4, // !typo; IRQ4 flag is for both CCA_ED_DONE and AWAKE_END
+	IRQ5_AMI			= 1 << 5,
+	IRQ6_TRX_UR			= 1 << 6,
+	IRQ7_BAT_LOW		= 1 << 7,
 };
 
 
 
 #define RG_IRQ_STATUS		(0x0F)
 #define SR_IRQ_STATUS		RG_IRQ_STATUS, 0xFF, 0
+
+#define SR_IRQ0_PLL_LOCK		RG_IRQ_STATUS, IRQ0_PLL_LOCK, 0
+#define SR_IRQ1_PLL_UNLOCK		RG_IRQ_STATUS, IRQ1_PLL_UNLOCK, 1
+#define SR_IRQ2_RX_START		RG_IRQ_STATUS, IRQ2_RX_START, 2
+#define SR_IRQ3_TRX_END			RG_IRQ_STATUS, IRQ3_TRX_END, 3
+#define SR_IRQ4_CCA_ED_DONE		RG_IRQ_STATUS, IRQ4_CCA_ED_DONE, 4
+#define SR_IRQ4_AWAKE_END		RG_IRQ_STATUS, IRQ4_AWAKE_END, 4
+#define SR_IRQ5_AMI				RG_IRQ_STATUS, IRQ5_AMI, 5
+#define SR_IRQ6_TRX_UR			RG_IRQ_STATUS, IRQ6_TRX_UR, 6
+#define SR_IRQ7_BAT_LOW			RG_IRQ_STATUS, IRQ7_BAT_LOW, 7
 
 
 

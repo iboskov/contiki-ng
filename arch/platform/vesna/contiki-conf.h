@@ -22,11 +22,11 @@
 
 // Platform specific timer bit-size
 // STM32F103 has 16-bit counter
-typedef uint32_t clock_time_t;
+#define RTIMER_CONF_CLOCK_SIZE  (8)
+typedef uint64_t clock_time_t;
 typedef uint32_t uip_stats_t;
 
-
-#define PLATFORM_SUPPORTS_BUTTON_HAL  (1)  
+#define PLATFORM_SUPPORTS_BUTTON_HAL  (1)
 
 
 #define STACK_CHECK_CONF_ENABLED	(0)

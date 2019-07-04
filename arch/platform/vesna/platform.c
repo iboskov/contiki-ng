@@ -72,13 +72,13 @@ platform_init_stage_two(void)
 			process_start(&uart1_tx_process, NULL);
 			serial_line_init();
 			LOG_INFO("UART1 as serial input enabled\n");
-		#endif // SLIP_CONF_ENABLED
+		#endif // !SLIP_CONF_ENABLED
 	#endif // UART_CONF_ENABLED
 
 	node_id_init(); // node_id_init is triggered twice. Here and between stage 2 & 3.
 
 	// TODO: Too much copying ... change only neccessery bits of linkaddr_node_addr
-	const uint8_t extAddr[8] = { 0, 0x12, 0x4B, 0, 0, 0x06, (node_id & 0xff), (node_id >> 8) };
+	const uint8_t extAddr[8] = { 0, 0x12, 0x4B, 0, 0, 0x06, (node_id & 0xFF), (node_id >> 8) };
 
 	// populate linkaddr_node_addr. Maintain endianess;
 	// This sets MAC address

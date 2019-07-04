@@ -74,16 +74,16 @@ ARCH_FLAGS += -mcpu=cortex-m3 -mthumb -mlittle-endian -mabi=aapcs
 
 CFLAGS += $(ARCH_FLAGS)
 CFLAGS += -ffunction-sections -fdata-sections -fno-strict-aliasing
-CFLAGS += -fshort-enums -fomit-frame-pointer -fno-builtin
-#CFLAGS += -Wall -Wwrite-strings -Wshadow -Werror=implicit-function-declaration
+CFLAGS += -fshort-enums -fno-builtin # -fomit-frame-pointer
+CFLAGS += -Wall -Wwrite-strings -Wshadow -Werror=implicit-function-declaration
 CFLAGS += -std=gnu99
 
 ### Are we building with code size optimisations?
-SMALL ?= 1
+SMALL ?= 0
 ifeq ($(SMALL),1)
   CFLAGS += -Os
 else
-  CFLAGS += -O2
+  CFLAGS += -ggdb3
 endif
 
 ifdef NODEID
@@ -92,7 +92,7 @@ endif
 
 # Compile with AT86RF2xx radio support/drivers
 ifdef AT86RF2XX_BOARD
-AT86RF2XX_BOARD_UPPER = $(shell echo "$(AT86RF2XX_BOARD)" | tr [a-z] [A-Z])
+AT86RF2XX_BOARD_UPPER = $(shell echo "$(AT86RF2XX_BOARD)" | tr [a-z] [A-Z] | tr [.\ ] _)
 CONTIKI_TARGET_DIRS += dev/at86rf2xx 
 CONTIKI_TARGET_SOURCEFILES += rf2xx.c
 CFLAGS += -DAT86RF2XX=1
@@ -102,7 +102,7 @@ endif
 
 # LTO is currently not recommended for ARM platforms as it messes up several things
 # due to a bug in ARM library. (Miha Mohorčič)
-#LTO ?= 1
+#LTO ?= 0
 #ifeq ($(LTO),1)
 #CFLAGS += -lto
 #endif
@@ -135,7 +135,7 @@ OBJDUMP_FLAGS += --disassemble --source --disassembler-options=force-thumb
 
 
 %.olimex: %.$(TARGET)
-	openocd \
+	$(Q)openocd \
 		-s $(CONTIKI)/arch/platform/$(TARGET)/OpenOCD/ \
 		-f snc_olimex_ocd.cfg \
 		-c "init" \
@@ -148,12 +148,19 @@ OBJDUMP_FLAGS += --disassemble --source --disassembler-options=force-thumb
 
 
 %.debug: %.$(TARGET)
-	openocd \
+	$(Q)openocd \
 		-s $(ARCH_PATH)/platform/$(TARGET)/OpenOCD/ \
 		-f snc_olimex_gdb.cfg
 
 
 %.gdb: %.$(TARGET)
-	gdb \
-		--eval-command="target remote 127.0.0.1:3333" \
+	$(Q)gdb-multiarch \
+		--eval-command="target extended-remote :3333" \
 		$*.$(TARGET)
+
+
+DEVICE ?= ttyUSB0
+BUADRATE ?= 115200
+
+serial:
+	$(Q)picocom --echo -b 115200 --imap lfcrlf --omap crlf /dev/$(DEVICE)
