@@ -5,13 +5,13 @@
 
 /* Default log level */
 #ifndef LOG_CONF_LEVEL_RF2XX
-#define LOG_CONF_LEVEL_RF2XX            LOG_LEVEL_NONE
+#define LOG_CONF_LEVEL_RF2XX            LOG_LEVEL_DBG
 #endif /* LOG_CONF_LEVEL_RF2XX */
 
 
 /* Enable/disable radio stats collecting (see rf2xxStats[]) */
 #ifndef RF2XX_CONF_STATS
-#define RF2XX_CONF_STATS		        (1)
+#define RF2XX_CONF_STATS		        (0)
 #endif /* RF2XX_CONF_STATS */
 
 /* Number of CSMA retries 0-5, 6 = reserved, 7 = immediately without CSMA/CA */
@@ -19,7 +19,7 @@
 #define RF2XX_CONF_MAX_CSMA_RETRIES	    (5)
 #endif /* RF2XX_CONF_CSMA_RETRIES */
 
-/* Number of frame retries, if no ACK, 1-15, 0 = driver will not use extended mode */
+/* Number of frame retries, if no ACK, 0-15 */
 #ifndef RF2XX_CONF_MAX_FRAME_RETRIES
 #define RF2XX_CONF_MAX_FRAME_RETRIES    (15)
 #endif /* RF2XX_CONF_FRAME_RETRIES */

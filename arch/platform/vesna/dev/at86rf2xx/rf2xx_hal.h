@@ -9,7 +9,7 @@
 #include "stm32f10x_exti.h"
 #include "stm32f10x_gpio.h"
 
-#include "vsntime.h"
+//#include "vsntime.h"
 #include "vsnspi_new.h"
 
 #include "rf2xx_registermap.h"
@@ -21,6 +21,7 @@
 #define RF2XX_MIN_FRAME_SIZE	(3)
 #define RF2XX_CRC_SIZE			(2)
 #define RF2XX_LQI_SIZE			(1)
+#define RF2XX_MAX_PAYLOAD_SIZE	(RF2XX_MAX_FRAME_SIZE - RF2XX_CRC_SIZE)
 
 
 typedef union {
@@ -82,11 +83,17 @@ enum {
 
 #if RF2XX_CONF_STATS
 	extern uint32_t rf2xxStats[RF2XX_STATS_COUNT];
+	#define RF2XX_STATS_ADD(x)		do { if (RF2XX_CONF_STATS) rf2xxStats[x]++; } while(0)
+	#define RF2XX_STATS_GET(x)		((RF2XX_CONF_STATS) ? (rf2xxStats[x]) : 0)
+	#define RF2XX_STATS_RESET()		do { if (RF2XX_CONF_STATS) memset(rf2xxStats, 0, sizeof(rf2xxStats[0]) * RF2XX_STATS_COUNT); } while(0)
+#else
+	#define RF2XX_STATS_ADD(x)
+	#define RF2XX_STATS_GET(x)
+	#define RF2XX_STATS_RESET()
+
 #endif // RF2XX_DEBUG
 
-#define RF2XX_STATS_ADD(x)		do { if (RF2XX_CONF_STATS) rf2xxStats[x]++; } while(0)
-#define RF2XX_STATS_GET(x)		((RF2XX_CONF_STATS) ? (rf2xxStats[x]) : 0)
-#define RF2XX_STATS_RESET()		do { if (RF2XX_CONF_STATS) memset(rf2xxStats, 0, sizeof(rf2xxStats[0]) * RF2XX_STATS_COUNT); } while(0)
+
 
 
 

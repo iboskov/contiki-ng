@@ -29,7 +29,7 @@ void uart1_init(unsigned long ubr) {
     USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
 
 	// Disable buffering
-	setvbuf(stdout, NULL, _IONBF, 0);
+	//setvbuf(stdout, NULL, _IONBF, 0);
 
 	// Clear input handler
 	input_handler = NULL;

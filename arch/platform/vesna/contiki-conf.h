@@ -32,20 +32,31 @@ typedef uint32_t uip_stats_t;
 #define STACK_CHECK_CONF_ENABLED	(0)
 
 #ifdef AT86RF2XX
+#include "at86rf2xx/rf2xx_arch.h"
 
 #define rf2xx_driver_max_payload_len    (125)
 
 //#define MAC_CONF_WITH_NULLMAC	1
 #define NETSTACK_CONF_RADIO 	rf2xx_driver
 
-#define NULLRDC_802154_AUTOACK		1
-#define NULLRDC_802154_AUTOACK_HW	1
+
+#define TSCH_CONF_BASE_DRIFT_PPM    1000
+#define RADIO_DELAY_BEFORE_RX       RF2XX_DELAY_BEFORE_RX
+#define RADIO_DELAY_BEFORE_TX       RF2XX_DELAY_BEFORE_TX
+#define RADIO_DELAY_BEFORE_DETECT   RF2XX_DELAY_BEFORE_DETECT
+#define RADIO_BYTE_AIR_TIME         RF2XX_BYTE_AIR_TIME
+#define RADIO_PHY_OVERHEAD          RF2XX_PHY_OVERHEAD
+
+
+//#define NULLRDC_802154_AUTOACK		1
+//#define NULLRDC_802154_AUTOACK_HW	1
 
 // Extended mode allows automatic retransmission
-#define RDC_CONF_HARDWARE_CSMA		1
+//#define RDC_CONF_HARDWARE_CSMA		1
 
 // Extended mode does automatic acknowledgements
-#define RDC_CONF_HARDWARE_ACK		1
+//#define RDC_CONF_HARDWARE_ACK		1
+
 #endif
 
 #endif

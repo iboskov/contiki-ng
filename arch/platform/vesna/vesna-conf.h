@@ -3,7 +3,7 @@
 
 // Enable/disable hardware watchdog. Default: Disabled
 #ifndef WATCHDOG_CONF_ENABLED
-#define WATCHDOG_CONF_ENABLED   (1)
+#define WATCHDOG_CONF_ENABLED   (0)
 #endif
 
 // Enable/disable UART*. Default: Enabled

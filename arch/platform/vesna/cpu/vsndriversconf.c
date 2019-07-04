@@ -156,13 +156,14 @@ void vsnDriversConf_nvic(void) {
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
 	NVIC_Init(&NVIC_InitStructure);
 
+/*
 	// Contiki uses it for timers and duty-cycling
 	NVIC_InitStructure.NVIC_IRQChannel = TIM5_IRQn;
 	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 2;
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 3;
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
 	NVIC_Init(&NVIC_InitStructure);
-
+*/
 #if AT86RF2XX_BOARD_SNR
 	// Enable AT86RF2xx radio interrupt on SNR board
 	NVIC_InitStructure.NVIC_IRQChannel = EXTI9_5_IRQn;

@@ -282,8 +282,6 @@ void SysTick_Handler(void)
  */
 void RTC_IRQHandler(void)
 {
-	//vsnTime_rtcSecondIsr();
-
 	// RTC Second IRQ handler
 	if (RTC_GetITStatus(RTC_IT_SEC) != RESET) {
 		vsnSetup_measureHsiFreq();
@@ -344,6 +342,11 @@ void UART4_IRQHandler(void)
  .word  TIM2_IRQHandler
  .word  TIM3_IRQHandler
  */
+
+void TIM2_IRQHandler(void)
+{
+	contiki_rtimer_isr();
+}
 
 /**
  * This function handles SPI1 interrupt Handler.
@@ -614,10 +617,10 @@ void EXTI9_5_IRQHandler(void) {
  * @param  None
  * @return None
  */
-void TIM4_IRQHandler(void)
+/* void TIM4_IRQHandler(void)
 {
 
-}
+}*/
 
 
 
