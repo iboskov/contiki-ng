@@ -72,11 +72,11 @@
 
 // Exposed radio metrics
 volatile uint8_t rf2xx_last_lqi;
-volatile uint8_t rf2xx_last_rssi;
+volatile int8_t rf2xx_last_rssi;
 
 // Exposed radio timings
-//static volatile uint16_t rf2xx_last_packet_timestamp;
-//volatile uint16_t rf2xx_frame_start_time; vsnTime_up
+volatile static rtimer_clock_t last_packet_timestamp;
+//volatile uint16_t rf2xx_frame_start_time;
 //volatile uint16_t rf2xx_frame_end_time;
 
 // (optional) statistics of the radio
@@ -84,7 +84,7 @@ volatile uint8_t rf2xx_last_rssi;
 uint32_t rf2xxStats[RF2XX_STATS_COUNT];
 #endif
 
-// static const unsigned int RF2XX_CAL_PERIOD = 240; // 240s == 4min
+static uint8_t txBuffer[2 + RF2XX_MAX_FRAME_SIZE];
 
 
 /* Local structures */
@@ -98,7 +98,7 @@ static EXTI_InitTypeDef EXTI_rf2xxStructure;
 EXTI_InitTypeDef * const rf2xxEXTI = &EXTI_rf2xxStructure;
 
 // Internal driver state machine & flags
-static rf2xx_flags_t flags;
+volatile static rf2xx_flags_t flags;
 
 // Internal timer (for timeout situations)
 static vsnTime_Timeout rxTimeout;
@@ -488,6 +488,7 @@ rf2xx_reset(void)
     // Initilize LQI & RSSI values
     rf2xx_last_lqi = 0;
     rf2xx_last_rssi = 0;
+	last_packet_timestamp = 0;
 }
 
 
@@ -1421,7 +1422,7 @@ void rf2xx_getLongAddr(uint8_t *addr, uint8_t len) {
 
 
 // TODO: FIX: return signed integer with proper value
-uint8_t rf2xx_ED_LEVEL(void) {
+int8_t rf2xx_ED_LEVEL(void) {
 	// Value is refreshed every 128us.
 
 	// value should be in range [0x00, 0x54]
@@ -1431,33 +1432,38 @@ uint8_t rf2xx_ED_LEVEL(void) {
 	// 0xFF is a reset value
 
 	// P_{RF} = -91 + ED_LEVEL
-	return bitRead(SR_ED_LEVEL);
+	//return - 91 + bitRead(SR_ED_LEVEL);
+	int8_t rssi = -91 + bitRead(SR_ED_LEVEL);
+	//LOG_DBG("RSSI=%i\n", rssi);
+	return rssi;
+
 }
 
 // TODO: FIX: return signed integer with proper value
-uint8_t rf2xx_RSSI(void) {
+int8_t rf2xx_RSSI(void) {
 	// RSSI value is refreshed every 2us.
 
 	// value should be in range [0x00, 0x1C] or [0, 28] in decimal
-	uint8_t rssi = bitRead(SR_RSSI);
+	//int8_t rssi = bitRead(SR_RSSI) - 1;
 
 	// 0 indicates signal strength < -91dBm
-	if (rssi == 0) return rssi; // This means that RSSI is below threshold
+	//if (rssi == 0) return rssi; // This means that RSSI is below threshold
 
 	// precision is 3dBm
-	rssi = (rssi - 1) * 3; // calculate appropriate RSSI (according to the reference manuals)
+	//rssi = (rssi - 1) * 3; // calculate appropriate RSSI (according to the reference manuals)
 
 	// P_{RF} = -91 + 3 * (RSSI - 1)
+
+	//return -91 + 3 * (rssi - 1);
+
+	int8_t rssi = -91 + 3 * (bitRead(SR_RSSI) - 1);
+	//LOG_DBG("RSSI=%i\n", rssi);
 	return rssi;
 }
 
 
-uint8_t rf2xx_rssi(void) {
-	#if RF2XX_CONF_AUTOACK
-		return rf2xx_ED_LEVEL();
-	#else
-		return rf2xx_RSSI();
-	#endif
+int8_t rf2xx_rssi(void) {
+	return extMode ? rf2xx_ED_LEVEL() : rf2xx_RSSI();
 }
 
 /*

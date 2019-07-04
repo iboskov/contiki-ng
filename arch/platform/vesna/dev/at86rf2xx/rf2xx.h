@@ -61,7 +61,7 @@ int rf2xx_off(void);
 void rf2xx_reset(void);
 
 // Raw values
-extern volatile uint8_t rf2xx_last_rssi;
+extern volatile int8_t rf2xx_last_rssi;
 extern volatile uint8_t rf2xx_last_lqi;
 
 uint8_t rf2xx_getTxPower(void);
@@ -90,7 +90,7 @@ int rf2xx_wakeUp(void);
 
 
 // Quick access functions
-uint8_t rf2xx_RSSI(void);
-uint8_t rf2xx_ED_LEVEL(void);
+int8_t rf2xx_RSSI(void);
+int8_t rf2xx_ED_LEVEL(void);
 
 #endif
