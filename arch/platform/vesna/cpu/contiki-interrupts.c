@@ -37,7 +37,7 @@
 #include "sys/clock.h"
 
 #include "dev/uart1.h"
-#include "at86rf2xx/rf2xx.h"
+#include "rf2xx.h"
 
 
 extern void clock_interrupt_handler(void);

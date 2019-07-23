@@ -1,6 +1,11 @@
+#include "stm32f10x_rcc.h"
+#include "stm32f10x_exti.h"
+
 #include "contiki.h"
 #include "sys/int-master.h"
 #include <stdbool.h>
+
+
 
 #warning "Not sure how this affect rest of the vesna-drivers"
 

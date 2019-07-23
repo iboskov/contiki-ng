@@ -32,9 +32,9 @@ typedef uint32_t uip_stats_t;
 #define STACK_CHECK_CONF_ENABLED	(0)
 
 #ifdef AT86RF2XX
-#include "at86rf2xx/rf2xx_arch.h"
+#include "rf2xx_arch.h"
 
-#define rf2xx_driver_max_payload_len    (125)
+#define rf2xx_driver_max_payload_len    RF2XX_MAX_PAYLOAD_SIZE
 
 //#define MAC_CONF_WITH_NULLMAC	1
 #define NETSTACK_CONF_RADIO 	rf2xx_driver
