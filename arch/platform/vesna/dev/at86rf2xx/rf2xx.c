@@ -10,34 +10,26 @@
 #include "sys/energest.h"
 #include "sys/rtimer.h"
 
-#include "at86rf2xx/rf2xx_registermap.h"
-#include "at86rf2xx/rf2xx_hal.h"
-#include "at86rf2xx/rf2xx.h"
+#include "stm32f10x_rcc.h"
+#include "stm32f10x_exti.h"
+#include "stm32f10x_gpio.h"
+#include "vsnspi_new.h"
+//#include "vsntime.h"
+
+
+#include "rf2xx/rf2xx_registermap.h"
+#include "rf2xx/rf2xx.h"
+#include "rf2xx/rf2xx_hal.h"
+
 
 #define LOG_MODULE "rf2xx"
-#define LOG_LEVEL 0
+#define LOG_LEVEL LOG_CONF_LEVEL_RF2XX
 
 
 #define DEFAULT_IRQ_MASK    (IRQ0_PLL_LOCK | IRQ2_RX_START | IRQ3_TRX_END | IRQ4_CCA_ED_DONE | IRQ5_AMI)
 
-#define CALIBRATION_PERIOD    (240) // seconds (~4min)
 
-
-#define POLL_MODE	(1)
-#define AUTOACK		(1)
-#define TEST	(1)
-
-#if CONTIKI
-    PROCESS(rf2xx_process, "AT86RF2xx driver");
-	//PROCESS(rf2xx_calibration_process, "AT86RF2xx calibration");
-#endif
-
-#define ASSERT(condition, M, ...) do { \
-    if (!(condition)) { LOG_ERR(M, ##__VA_ARGS__); } \
-} while(0)
-
-/* Macros to access I/O functions */
-
+/// Macros to access I/O functions
 // SPI Chip-Select operations
 #define clearCS()		(vsnSPI_chipSelect(rf2xxSPI, SPI_CS_HIGH))
 #define setCS()			(vsnSPI_chipSelect(rf2xxSPI, SPI_CS_LOW))
@@ -57,8 +49,7 @@
 #define clearEXTI()		(EXTI_ClearFlag(EXTI_IRQ_LINE))
 
 
-/* SPI command bytes */
-
+/// SPI COMMAND BYTES
 // Register access
 #define CMD_REG_MASK	(0x3F)
 #define CMD_REG			(0x80)
@@ -76,141 +67,226 @@
 #define CMD_WRITE		(0x40)
 
 
-/* Exposed structures */
-
-// Exposed radio metrics
 volatile uint8_t rf2xx_last_lqi;
 volatile int8_t rf2xx_last_rssi;
 
-// Exposed radio timings
-volatile static rtimer_clock_t last_packet_timestamp;
-//volatile uint16_t rf2xx_frame_start_time;
-//volatile uint16_t rf2xx_frame_end_time;
 
-// (optional) statistics of the radio
-#if RF2XX_CONF_STATS
-uint32_t rf2xxStats[RF2XX_STATS_COUNT];
-#endif
+volatile static rtimer_clock_t last_packet_timestamp;
 
 static uint8_t txBuffer[2 + RF2XX_MAX_FRAME_SIZE];
 
-
-/* Local structures */
 
 // SPI struct (from VESNA drivers) and constant (immutable) pointer to it.
 static vsnSPI_CommonStructure SPI_rf2xxStructure;
 vsnSPI_CommonStructure * const rf2xxSPI = &SPI_rf2xxStructure;
 
 // EXTI (interrupt) struct (from STM) and constant (immutable) pointer to it.
-static EXTI_InitTypeDef EXTI_rf2xxStructure;
+static EXTI_InitTypeDef EXTI_rf2xxStructure = {
+    .EXTI_Line = EXTI_IRQ_LINE,
+    .EXTI_Mode = EXTI_Mode_Interrupt,
+    .EXTI_Trigger = EXTI_Trigger_Rising,
+    .EXTI_LineCmd = ENABLE,
+};
 EXTI_InitTypeDef * const rf2xxEXTI = &EXTI_rf2xxStructure;
 
 // Internal driver state machine & flags
 volatile static rf2xx_flags_t flags;
 
-// Internal timer (for timeout situations)
-static vsnTime_Timeout rxTimeout;
-//static uint32_t lastCalibration;
+
+typedef union {
+    struct {
+        uint8_t sleep:1;
+        uint8_t rxMode:1;
+        uint8_t txMode:1;
+        uint8_t pollMode:1; // 6TISCH disables
+        uint8_t autoACK:1; // RX_AACK
+        uint8_t autoCCA:1; // TX_ARET
+        uint8_t addrFilter:1;
+    };
+    uint8_t value;
+} rf2xx_options_t;
+static rf2xx_options_t opts;
+
+
+typedef struct {
+    //uint16_t SLEEP_TO_TRX_OFF;
+    //uint16_t TRX_OFF_TO_SLEEP;
+    uint16_t TRX_OFF_TO_PLL_ON;
+    uint16_t TRX_OFF_TO_RX_ON;
+    uint16_t PLL_ON_TO_BUSY_TX;
+    uint16_t FORCE_TRX_OFF;
+    uint16_t CCA;
+} rf2xx_timetable_t;
+
+rf2xx_timetable_t time = {
+    .TRX_OFF_TO_PLL_ON = 110,
+    .TRX_OFF_TO_RX_ON = 110,
+    .PLL_ON_TO_BUSY_TX = 16,
+    .FORCE_TRX_OFF = 1,
+    .CCA = 140,
+};
+
 
 // Store radio type for later discrimitation
-static rf2xx_radio_t rf2xx_radio = RF2XX_UNDEFINED;
-//uint8_t rf2xx_radio_rev = 0x00;
+static uint8_t chip = RF2XX_UNDEFINED;
 
 
-// Experimental features
-static uint8_t extMode = 1;
-static uint8_t pollMode = POLL_MODE;
 
-//#define rf2xx_setAutoAck(state) 	(bitWrite(SR_AACK_DIS_ACK, !state))
-//#define rf2xx_getAutoAck()			(!bitRead(SR_AACK_DIS_ACK))
-//#define rf2xx_setAddrFilter(state)	(extMode = !!state)
-//#define rf2xx_getAddrFilter()		(extMode)
-//#define rf2xx_setPollMode(state)	(pollMode = !!state)
-//#define rf2xx_getPollMode()			(pollMode)
+static int on(void);
+static int off(void);
+static uint8_t getChannel(void);
+static float getFrequency(void);
+
+
+
+PROCESS(rf2xx_process, "AT86RF2xx driver");
+//PROCESS(rf2xx_calibration_process, "AT86RF2xx calibration");
+
+
+inline static int8_t getRSSI(void) {
+    int8_t value = bitRead(SR_ED_LEVEL);
+    if (value >= 0x00 && value <= 0x54) return value - 91;
+    return 0;
+}
 
 inline static rf2xx_irq_t getIRQs(void) {
 	rf2xx_irq_t irq;
-    vsnSPI_ErrorStatus status;
-	vsnTime_Timeout timeout;
-    uint8_t value;
-
-    do {
-        vsnTime_setTimeout(&timeout, 200);
-        do {
-            status = vsnSPI_checkSPIstatus(rf2xxSPI);
-            if (!vsnTime_checkTimeout(&timeout)) {
-				LOG_ERR("SPI timeout\n");
-                break;
-            }
-        } while (status & (VSN_SPI_COM_IN_PROGRESS | VSN_SPI_BUS_BUSY));
-
-        setCS();
-        vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, &irq.value);
-        clearCS();
-
-    } while (status != VSN_SPI_SUCCESS);
+    setCS();
+    vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, &irq.value);
+    clearCS();
 
     return irq;
 }
 
 
-inline static void setAutoAck(uint8_t enabled) {
-	//bitWrite(SR_AACK_DIS_ACK, enabled ? 0 : 1);
-	//LOG_INFO("AutoACK set to %u\n", bitRead(SR_AACK_DIS_ACK));
+// Generic SPI callback function
+static void
+spiCallback(void *cbDevStruct)
+{
+	vsnSPI_ErrorStatus spiStatus;
+	vsnSPI_CommonStructure *spi = cbDevStruct; // casting in separate line to simplify debugging
+	spiStatus = vsnSPI_chipSelect(spi, SPI_CS_HIGH);
+	if (VSN_SPI_SUCCESS != spiStatus) {
+		LOG_ERR("SPI chip select error\n");
+	}
 }
 
-inline static uint8_t getAutoAck(void) {
-	return AUTOACK; //return !bitRead(SR_AACK_DIS_ACK) && extMode;
-}
-
-inline static void setAddrFilter(uint8_t enabled) {
-	extMode = !!enabled;
-	LOG_INFO("AddrFilter set to %u\n", extMode);
-}
-
-inline static uint8_t getAddrFilter(void) {
-	return extMode;
-}
-
-inline static int8_t getCcaThreshold(void) {
-    return -91 + 2 * bitRead(SR_CCA_ED_THRES);
-}
-
-inline static void setCcaThreshold(int8_t threshold) {
-	LOG_INFO("CCA-threshod=%u\n", threshold);
-    bitWrite(SR_CCA_ED_THRES, threshold / 2 + 91);
-}
-
-inline static void setSendOnCca(uint8_t enabled) {
-	LOG_INFO("SendOnCCA=%u\n", enabled);
-    bitWrite(SR_MAX_CSMA_RETRIES, enabled ? RF2XX_CONF_MAX_CSMA_RETRIES : 0);
-}
-
-inline static uint8_t getSendOnCca(void) {
-    return bitRead(SR_MAX_CSMA_RETRIES) > 0;
+// Generic SPI callback for errors
+static void
+spiErrorCallback(void *cbDevStruct)
+{
+	vsnSPI_CommonStructure *spi = cbDevStruct;
+	vsnSPI_chipSelect(spi, SPI_CS_HIGH);
+	LOG_ERR("SPI error callback triggered\n");
 }
 
 
-inline static void setPollMode(uint8_t enabled) {
-	LOG_INFO("pollMode=%u\n", enabled);
-    pollMode = !!enabled;
-	// Disable radio interrupts
-	regWrite(RG_IRQ_MASK, POLL_MODE ? 0x00 : DEFAULT_IRQ_MASK);
+void setChannel(uint8_t ch) {
+	switch (chip) {
+		case RF2XX_AT86RF233:
+		//case RF2XX_AT86RF232:
+		case RF2XX_AT86RF231:
+		case RF2XX_AT86RF230:
+		case RF2XX_AT86RF212:
+			bitWrite(SR_CHANNEL, ch);
+			if (flags.PLL_LOCK) {
+				RTIMER_BUSYWAIT_UNTIL(
+					!getIRQs().IRQ0_PLL_LOCK,
+					US_TO_RTIMERTICKS(20)
+				);
+			}
+			break;
+
+		default:
+			break;
+	}
+
+	//LOG_INFO("Channel=%u Freq=%.2fMHz\n", getChannel(), getFrequency());
 }
 
-inline static uint8_t getPollMode(void) {
-    return POLL_MODE;
-} 
+uint8_t getChannel(void) {
+	return bitRead(SR_CHANNEL);
+}
+
+void setTxPower(uint8_t pwr) {
+	switch (chip) {
+		case RF2XX_AT86RF212:
+			bitWrite(SR_TX_PWR_RF21x_ALL, pwr);
+			break;
+
+		case RF2XX_AT86RF230:
+		case RF2XX_AT86RF231:
+		case RF2XX_AT86RF233:
+		default:
+			bitWrite(SR_TX_PWR, pwr);
+			break;
+	}
+}
+
+uint8_t getTxPower(void) {
+	switch (chip) {
+		case RF2XX_AT86RF212:
+			return bitRead(SR_TX_PWR_RF21x_ALL);
+
+		case RF2XX_AT86RF230:
+		case RF2XX_AT86RF231:
+		case RF2XX_AT86RF233:
+		default:
+			return bitRead(SR_TX_PWR);
+	}
+}
+
+void setPanID(uint16_t pan) {
+	regWrite(RG_PAN_ID_0, pan & 0xFF);
+	regWrite(RG_PAN_ID_1, pan >> 8);
+	LOG_INFO("PAN == 0x%02x\n", pan);
+}
 
 
-#warning "TODO: Disable radio IRQs in polling mode"
+uint16_t getPanID(void) {
+	uint16_t pan = ((uint16_t)regRead(RG_PAN_ID_1) << 8) & 0xFF00;
+    pan |= (uint16_t)regRead(RG_PAN_ID_0) & 0xFF;
+    return pan;
+}
+
+uint16_t getShortAddr(void) {
+	uint16_t addr = ((uint16_t)regRead(RG_SHORT_ADDR_1) << 8) & 0xFF00;
+    addr |= (uint16_t)regRead(RG_SHORT_ADDR_0) & 0xFF;
+    return addr;
+}
+
+void setShortAddr(uint16_t addr) {
+	regWrite(RG_SHORT_ADDR_0, addr & 0xFF);
+	regWrite(RG_SHORT_ADDR_1, addr >> 8);
+	LOG_INFO("Short addr == 0x%02x\n", addr);
+}
+
+void setLongAddr(const uint8_t * addr, uint8_t len) {
+    if (len > 8) len = 8;
+
+    // The usual representation of MAC address has big-endianess. However,
+    // This radio uses little-endian, so the order of bytes has to be reversed.
+	// When we define IEEE addr, the most important byte is ext_addr[0], while
+	// on radio RG_IEEE_ADDR_0 must contain the lowest/least important byte.
+    for (uint8_t i = 0; i < len; i++) {
+        regWrite(RG_IEEE_ADDR_7 - i, addr[i]);
+    }
+}
+
+
+void getLongAddr(uint8_t *addr, uint8_t len) {
+	if (len > 8) len = 8;
+    for (uint8_t i = 0; i < len; i++) {
+        addr[i] = regRead(RG_IEEE_ADDR_7 - i);
+    }
+}
 
 
 
-static float rf2xx_getFrequency(void) {
+static float getFrequency(void) {
 	uint8_t channel = bitRead(SR_CHANNEL);
 
-	switch (rf2xx_radio) {
+	switch (chip) {
 		case RF2XX_AT86RF233:
 		//case RF2XX_AT86RF232:
 		case RF2XX_AT86RF231:
@@ -252,137 +328,8 @@ static float rf2xx_getFrequency(void) {
 }
 
 
-uint32_t rf2xx_getTiming(rf2xx_timing_t timing) {
-	/* MMohorcic suggested this way:
-		Timing devices[] = {
-			{0,1,2,3,4,5,6,7,8,9},
-			{2,3,4,5,6,7,8,9,9,9},
-			{0,1,2,3,4,5,6,7,8,9},
-			{0,1,2,3,4,5,6,7,8,9},
-			{0,1,2,3,4,5,6,7,8,9},
-		};
-		Timing* devicePtr;
-
-		rf2xx_radio_t rf2xx_radio = RF2XX_UNDEFINED;
-
-		uint32_t rf2xx_getTiming(rf2xx_timing_t timing) {
-			uint16_t* p = (uint16_t*) (devicePtr + (((uint8_t)timing)*2));
-			return *p;
-		}
-
-		OR SAFER version
-
-		uint32_t rf2xx_getTiming(rf2xx_timing_t timing) {
-			switch (timing) {
-				case TIME__VCC_TO_P_ON:
-					return devicePtr->TIME__VCC_TO_P_ON;
-				case TIME__SLEEP_TO_TRX_OFF:
-					return devicePtr->TIME__SLEEP_TO_TRX_OFF;
-				case TIME__TRX_OFF_TO_PLL_ON:
-					return devicePtr->TIME__TRX_OFF_TO_PLL_ON;
-				case TIME__TRX_OFF_TO_RX_ON:
-					return devicePtr->TIME__TRX_OFF_TO_RX_ON;
-				case TIME__PLL_ON_TO_BUSY_TX:
-					return devicePtr->TIME__PLL_ON_TO_BUSY_TX;
-				case TIME__FORCE_TRX_OFF:
-					return devicePtr->TIME__FORCE_TRX_OFF;
-				case TIME__CCA:
-					return devicePtr->TIME__CCA;
-				case TIME__TRX_OFF_TO_SLEEP:
-					return devicePtr->TIME__TRX_OFF_TO_SLEEP;
-				case TIME__TRX_OFF_TO_AACK:
-					return devicePtr->TIME__TRX_OFF_TO_AACK;
-				case TIME__FRAME:
-					return devicePtr->TIME__FRAME;
-				default:
-					return 4096;
-			}
-		}
-	*/
-	switch (timing) {
-		case TIME__VCC_TO_P_ON:
-			return 330;
-
-		case TIME__SLEEP_TO_TRX_OFF:
-			switch (rf2xx_radio) {
-				case RF2XX_AT86RF233:
-					return 180;
-				//case RF2XX_AT86RF232:
-				case RF2XX_AT86RF231:
-				case RF2XX_AT86RF230:
-				case RF2XX_AT86RF212:
-				default:
-					return 380;
-			}
-
-		case TIME__TRX_OFF_TO_PLL_ON:
-		case TIME__TRX_OFF_TO_RX_ON:
-			switch (rf2xx_radio) {
-				case RF2XX_AT86RF233:
-					return 80;
-				//case RF2XX_AT86RF232:
-				case RF2XX_AT86RF231:
-				case RF2XX_AT86RF230:
-					return 110;
-				case RF2XX_AT86RF212:
-				default:
-					return 200;
-			}
-
-		case TIME__PLL_ON_TO_BUSY_TX:
-			switch (rf2xx_radio) {
-				case RF2XX_AT86RF233:
-				//case RF2XX_AT86RF232:
-				case RF2XX_AT86RF231:
-				case RF2XX_AT86RF230:
-					return 16;
-				case RF2XX_AT86RF212:
-				default:
-					return 50; // Not sure about this
-			}
-
-		case TIME__FORCE_TRX_OFF:
-			return 1;
-
-		case TIME__CCA:
-			switch (rf2xx_radio) {
-				case RF2XX_AT86RF233:
-				//case RF2XX_AT86RF232:
-				case RF2XX_AT86RF231:
-				case RF2XX_AT86RF230:
-					return 140;
-				case RF2XX_AT86RF212:
-				default:
-					return 280; // Not sure about this
-			}
-
-		case TIME__TRX_OFF_TO_SLEEP:
-			// Not reliable as it depends on CLKM
-			switch (rf2xx_radio) {
-				case RF2XX_AT86RF233:
-					return 26 * 4;
-				//case RF2XX_AT86RF232:
-				case RF2XX_AT86RF231:
-				case RF2XX_AT86RF230:
-				case RF2XX_AT86RF212:
-				default:
-					return 35 * 4;
-			}
-
-		case TIME__TRX_OFF_TO_AACK:
-			return 110;
-
-		case TIME__FRAME:
-			return 4096; // Not sure about this for RF212
-
-		default:
-			return 4096;
-	}
-}
-
-
-uint8_t rf2xx_getMaxChannel(void) {
-	switch (rf2xx_radio) {
+uint8_t getMaxChannel(void) {
+	switch (chip) {
 		case RF2XX_AT86RF233:
 		case RF2XX_AT86RF231:
 		case RF2XX_AT86RF230:
@@ -394,8 +341,8 @@ uint8_t rf2xx_getMaxChannel(void) {
 	}
 }
 
-uint8_t rf2xx_getMinChannel(void) {
-	switch (rf2xx_radio) {
+uint8_t getMinChannel(void) {
+	switch (chip) {
 		case RF2XX_AT86RF233:
 		case RF2XX_AT86RF231:
 		case RF2XX_AT86RF230:
@@ -407,9 +354,9 @@ uint8_t rf2xx_getMinChannel(void) {
 	}
 }
 
-uint8_t rf2xx_getMaxPwr(void) {
+uint8_t getMaxPwr(void) {
 	// Get hex value to set it on radio
-	switch (rf2xx_radio) {
+	switch (chip) {
 		case RF2XX_AT86RF233:
 		case RF2XX_AT86RF231:
 		case RF2XX_AT86RF230:
@@ -421,9 +368,10 @@ uint8_t rf2xx_getMaxPwr(void) {
 	}
 }
 
-uint8_t rf2xx_getMinPwr(void) {
+// TODO: Still don't know how to do it for RF212
+uint8_t getMinPwr(void) {
 	// Get hex value to set it on radio
-	switch (rf2xx_radio) {
+	switch (chip) {
 		case RF2XX_AT86RF233:
 		case RF2XX_AT86RF231:
 		case RF2XX_AT86RF230:
@@ -435,83 +383,87 @@ uint8_t rf2xx_getMinPwr(void) {
 	}
 }
 
-
-// Generic SPI callback function
-static void
-spiCallback(void *cbDevStruct)
-{
-	vsnSPI_ErrorStatus spiStatus;
-	vsnSPI_CommonStructure *spi = cbDevStruct; // casting in separate line to simplify debugging
-	spiStatus = vsnSPI_chipSelect(spi, SPI_CS_HIGH);
-	if (VSN_SPI_SUCCESS != spiStatus) {
-		LOG_ERR("SPI chip select error\n");
-	}
+inline static int8_t getCcaThreshold(void) {
+    return -91 + 2 * bitRead(SR_CCA_ED_THRES);
 }
 
-// Generic SPI callback for errors
-static void
-spiErrorCallback(void *cbDevStruct)
-{
-	vsnSPI_CommonStructure *spi = cbDevStruct;
-	vsnSPI_chipSelect(spi, SPI_CS_HIGH);
-	LOG_ERR("SPI error callback triggered\n");
+inline static void setCcaThreshold(int8_t threshold) {
+	LOG_INFO("CCA-threshod=%u\n", threshold);
+    bitWrite(SR_CCA_ED_THRES, threshold / 2 + 91);
 }
 
 
-void
-rf2xx_reset(void)
-{
-	uint8_t dummy __attribute__((unused));
+
+
+
+
+void reset(void) {
+    uint8_t dummy __attribute__((unused));
+    uint8_t partNum;
 
 	setRST(); // hold radio in reset state
+
 	clearCS(); // clear chip select (default)
 	clearSLPTR(); // prevent going to sleep
 	clearEXTI(); // clear interrupt flag
+    clearRST(); // release radio from RESET state
 
-	clearRST(); // release radio from RESET state
-
-	// Radio should now go through P_ON -> TRX_OFF state migration
-	//vsnTime_delayUS(rf2xx_getTiming(TIME__VCC_TO_P_ON));
-	RTIMER_BUSYWAIT(US_TO_RTIMERTICKS(US_TO_RTIMERTICKS(TIME__VCC_TO_P_ON)));
-	ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS), "TRX_OFF not reached\n");
+    RTIMER_BUSYWAIT(US_TO_RTIMERTICKS(330));
 
 	// Print for what pin layout was compiled.
 	LOG_INFO("Compiled for " AT86RF2XX_BOARD_STRING "\n");
 
-	// Radio indentification process
-	// This will loop as long as radio is not recognized.
-	// We are not touching unknown device.
-	{
-		uint8_t partNum;
-		//uint8_t verNum;
-		do {
-			LOG_INFO("Detecting AT86RF2xx radio\n");
+    // Radio indentification procedure
+    do {
+        LOG_INFO("Detecting AT86RF2xx radio\n");
 
-			// Match JEDEC manufacturer ID
-			if (regRead(RG_MAN_ID_0) == RF2XX_MAN_ID_0 && regRead(RG_MAN_ID_1) == RF2XX_MAN_ID_1) {
-				LOG_INFO("JEDEC matches Atmel\n");
+        // Match JEDEC manufacturer ID
+        if (regRead(RG_MAN_ID_0) == RF2XX_MAN_ID_0 && regRead(RG_MAN_ID_1) == RF2XX_MAN_ID_1) {
+            LOG_INFO("JEDEC ID matches Atmel\n");
 
-				// Match known radio (and sanitize radio type)
-				partNum = regRead(RG_PART_NUM);
-				switch (partNum) {
-					case RF2XX_AT86RF233:
-					//case RF2XX_AT86RF232:
-					case RF2XX_AT86RF231:
-					case RF2XX_AT86RF230:
-					case RF2XX_AT86RF212:
-						LOG_INFO("Radio part number 0x%02x\n", partNum);
-						rf2xx_radio = partNum;
-					default:
-						break;
-				}
-			}
-		} while (rf2xx_radio == RF2XX_UNDEFINED);
-	}
+            // Match known radio (and sanitize radio type)
+            partNum = regRead(RG_PART_NUM);
+            switch (partNum) {
+            case RF2XX_AT86RF233:
+                time = (rf2xx_timetable_t){
+                    .TRX_OFF_TO_PLL_ON = 80,
+                    .TRX_OFF_TO_RX_ON = 80,
+                    .PLL_ON_TO_BUSY_TX = 16,
+                    .FORCE_TRX_OFF = 1,
+                    .CCA = 140,
+                };
+            //case RF2XX_AT86RF232:
+            case RF2XX_AT86RF231:
+            case RF2XX_AT86RF230:
+                time = (rf2xx_timetable_t){
+                    .TRX_OFF_TO_PLL_ON = 110,
+                    .TRX_OFF_TO_RX_ON = 110,
+                    .PLL_ON_TO_BUSY_TX = 16,
+                    .FORCE_TRX_OFF = 1,
+                    .CCA = 140,
+                };
+            case RF2XX_AT86RF212:
+                // Not sure about this timetable ...
+                time = (rf2xx_timetable_t){
+                    .TRX_OFF_TO_PLL_ON = 200,
+                    .TRX_OFF_TO_RX_ON = 200,
+                    .PLL_ON_TO_BUSY_TX = 50,
+                    .FORCE_TRX_OFF = 1,
+                    .CCA = 280,
+                };
+                LOG_INFO("Radio part number 0x%02x\n", partNum);
+                chip = partNum;
+            default:
+                break;
+            }
+        }
+    } while (RF2XX_UNDEFINED == chip);
+
 
 	// CLKM clock change visible immediately
 	bitWrite(SR_CLKM_SHA_SEL, 0);
 
-	// disable CLKM
+	// disable CLKM (as output)
 	bitWrite(SR_CLKM_CTRL, CLKM_DISABLED);
 
 	// Enable/disable Tx autogenerating CRC16/CCITT
@@ -541,27 +493,15 @@ rf2xx_reset(void)
 	// Usable only in AUTOACK mode,
 	// Defined in IEEE 802.15.4-2006
 	// Might be causing problems with older IEEE 802.15.4-2003 compliant devices
-	bitWrite(SR_AACK_I_AM_COORD, RF2XX_CONF_I_AM_COORD);
-
-	// Other sane defaults
-	switch (rf2xx_radio) {
-	case RF2XX_AT86RF212:
-		regWrite(RG_TRX_CTRL_2, 0x08); // set OQPSK-SIN-RC-100
-		rf2xx_setChannel(0); // set to channel 0 (868.3 MHz)
-		regWrite(RG_PHY_TX_PWR, 0x62); // set to 4 dBm
-		break;
-
-	default:
-		break;
-	}
+	//bitWrite(SR_AACK_I_AM_COORD, RF2XX_CONF_I_AM_COORD);
 
 	// Set configured channel
 	//rf2xx_setChannel(RF2XX_CHANNEL);
-    LOG_INFO("Channel=%u Freq=%.2fMHz\n", rf2xx_getChannel(), rf2xx_getFrequency());
+    LOG_INFO("Channel=%u Freq=%.2fMHz\n", getChannel(), getFrequency());
 
 	//rf2xx_setTxPower(RF2XX_TX_POWER);
     // LOG_DBG("Pwr(hex): %u", rf2xx_getTxPower());
-	LOG_INFO("Pwr=0x%02x\n", rf2xx_getTxPower());
+	LOG_INFO("Pwr=0x%02x\n", getTxPower());
 
 	// First returned byte will be IRQ_STATUS;
 	bitWrite(SR_SPI_CMD_MODE, SPI_CMD_MODE__IRQ_STATUS);
@@ -569,20 +509,21 @@ rf2xx_reset(void)
 	// Configure Promiscuous mode; Incomplete
 	//bitWrite(SR_AACK_PROM_MODE, RF2XX_CONF_PROMISCUOUS);
 	//bitWrite(SR_AACK_UPLD_RES_FT, 1);
-	bitWrite(SR_AACK_FLTR_RES_FT, 1);
+	//bitWrite(SR_AACK_FLTR_RES_FT, 1);
 
 	// Enable only specific IRQs
-	//regWrite(RG_IRQ_MASK, IRQ2_RX_START | IRQ3_TRX_END | IRQ4_CCA_ED_DONE | IRQ5_AMI);
-	regWrite(RG_IRQ_MASK, POLL_MODE ? 0x00 : DEFAULT_IRQ_MASK);
+	regWrite(RG_IRQ_MASK, DEFAULT_IRQ_MASK);
 
-	// Read it to clear it
-	//dummy = regRead(RG_IRQ_STATUS);
+	// Read IRQ register to clear it
+	dummy = regRead(RG_IRQ_STATUS);
 
 	// Clear any interrupt pending
 	clearEXTI();
 
-    RF2XX_STATS_RESET(); // resets radio metrics
+    //RF2XX_STATS_RESET(); // resets radio metrics
     flags.value = 0; // clear all driver internal flags
+    opts.autoACK = 1;
+    opts.autoCCA = 1;
 
     // Initilize LQI & RSSI values
     rf2xx_last_lqi = 0;
@@ -592,7 +533,7 @@ rf2xx_reset(void)
 
 
 int
-rf2xx_init(void)
+init(void)
 {
 	// If AT86RF2xx radio is on SNR board
 	#if AT86RF2XX_BOARD_SNR
@@ -640,17 +581,11 @@ rf2xx_init(void)
         &spiConfig,
         CSN_PIN,
         CSN_PORT,
-        AT86RF2XX_SPI_SPEED
+        RF2XX_SPI_SPEED
     );
 
 	// register error callback
 	vsnSPI_Init(rf2xxSPI, spiErrorCallback);
-
-    // EXTI configuration
-    rf2xxEXTI->EXTI_Line = EXTI_IRQ_LINE;
-    rf2xxEXTI->EXTI_Mode = EXTI_Mode_Interrupt;
-    rf2xxEXTI->EXTI_Trigger = EXTI_Trigger_Rising;
-    rf2xxEXTI->EXTI_LineCmd = POLL_MODE ? DISABLE : ENABLE;
 
     // GPIO init and common settings
 	GPIO_InitTypeDef GPIO_InitStructure;
@@ -682,25 +617,21 @@ rf2xx_init(void)
     // Initialize EXTI line, while radio is in RESET state
     EXTI_Init(rf2xxEXTI);
 
+    // Reset internal and hardware states
+	reset();
 
-	rf2xx_reset();
-
-    #if CONTIKI
 	// Start Contiki process which will take care of received packets
 	process_start(&rf2xx_process, NULL);
 	// process_start(&rf2xx_calibration_process, NULL);
-    #endif
 
 	return 1;
 }
 
 
-int
-rf2xx_prepare(const void *payload, unsigned short payload_len)
-{
-	LOG_DBG("Prepare\n");
-	if (payload_len > RF2XX_MAX_FRAME_SIZE - RF2XX_CRC_SIZE) {
-        LOG_ERR("Payload larger than radio buffer: %u > %u\n", payload_len, RF2XX_MAX_FRAME_SIZE - RF2XX_CRC_SIZE);
+static int prepare(const void *payload, unsigned short payload_len) {
+    
+    // Verify that payload is not bigger than radio's buffer
+    if (payload_len > RF2XX_MAX_PAYLOAD_SIZE) {
         return RADIO_TX_ERR;
     }
 
@@ -708,592 +639,268 @@ rf2xx_prepare(const void *payload, unsigned short payload_len)
 	txBuffer[1] = payload_len + RF2XX_CRC_SIZE; // CRC is always part of 802.15.4 frame
 	memcpy(txBuffer+2, payload, payload_len);
 
-	// if we disabled radio's built-in CRC check for some reason
-	if (!RF2XX_CONF_CHECKSUM) {
-		uint16_t crc = crc16_data(payload, payload_len, 0x00);
-		memcpy(txBuffer+2+payload_len, &crc, RF2XX_CRC_SIZE); // copy CRC after actual data
-	}
+    #if !RF2XX_CONF_CHECKSUM
+    {
+        uint16_t crc = crc16_data(payload, payload_len, 0x00);
+        memcpy(txBuffer+2+payload_len, &crc, RF2XX_CRC_SIZE); // copy CRC after actual data
+    }
+    #endif
 
-	return payload_len;
+    return RADIO_TX_OK;
 }
 
 
-int
-rf2xx_transmit(unsigned short transmit_len)
-{
+static int transmit(unsigned short transmit_len) {
 	vsnSPI_ErrorStatus status;
     vsnTime_Timeout timeout;
     uint8_t dummy __attribute__((unused));
     uint8_t trac;
 
-	LOG_DBG("Start TX ");
-
-	// Check if radio is asleep
-	if (flags.SLEEP) {
-		rf2xx_wakeUp();
-		LOG_DBG_("WakeUp ");
-	}
-
-	regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
-    LOG_DBG_("TRX_OFF ");
-    //vsnTime_delayUS(rf2xx_getTiming(TIME__FORCE_TRX_OFF));
-	//RTIMER_BUSYWAIT(rf2xx_getTiming(TIME__FORCE_TRX_OFF));
-	RTIMER_BUSYWAIT_UNTIL(
-		bitRead(SR_TRX_STATUS) != TRX_STATUS_TRX_OFF,
-		US_TO_RTIMERTICKS(rf2xx_getTiming(TIME__FORCE_TRX_OFF))
-	);
-
-	//ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS), "TRX_OFF not reached\n");
-
-	// Extended mode or not.
-    if (extMode) {
-        regWrite(RG_TRX_STATE, TRX_CMD_TX_ARET_ON); // extended mode
-        LOG_DBG_("TX_ARET ");
-    } else {
-        regWrite(RG_TRX_STATE, TRX_CMD_PLL_ON);
-        LOG_DBG_("PLL_ON ");
-    }
-
-	//vsnTime_delayUS(rf2xx_getTiming(TIME__TRX_OFF_TO_PLL_ON));
-	RTIMER_BUSYWAIT_UNTIL(
-		getIRQs().IRQ0_PLL_LOCK != 1,
-		US_TO_RTIMERTICKS(rf2xx_getTiming(TIME__TRX_OFF_TO_PLL_ON))
-	);
-	//RTIMER_BUSYWAIT(rf2xx_getTiming(TIME__TRX_OFF_TO_PLL_ON));
-
-	// Check SPI status
-	vsnTime_setTimeout(&timeout, 200);
-	do {
-		status = vsnSPI_checkSPIstatus(rf2xxSPI);
-		if (!vsnTime_checkTimeout(&timeout)) {
-			LOG_WARN("SPI-timeout\n");
-			return 0;
-		}
-	} while (status & (VSN_SPI_COM_IN_PROGRESS | VSN_SPI_BUS_BUSY));
-
-	//RTIMER_BUSYWAIT_UNTIL()
-
-
-	// Sanity checks
-	//ASSERT(0 == getCS(), "Something wrong with SPI-CS\n");
-
-	// If CRC is not offloaded to a radio, add precomputed CRC
-	if (!RF2XX_CONF_CHECKSUM) transmit_len += RF2XX_CRC_SIZE;
-
-	LOG_DBG_("%ubytes ", transmit_len);
-
-	// Preparations for transmit and interrupt perception
-	flags.value = 0;
-	//dummy = regRead(RG_IRQ_STATUS);
-
-	setCS(); // Chip select
-
-	ENERGEST_ON(ENERGEST_TYPE_TRANSMIT);
-
-	// Trigger transmit (see Manual p. 127, bottom)
-	setSLPTR();
-	clearSLPTR();
-
-	// Contiki's energest
-
-	// length is command byte + payload size byte + len
-	status = vsnSPI_transferDataTX(rf2xxSPI, txBuffer, 2 + transmit_len, spiCallback);
-
-	// Observe SPI status
-	//RTIMER_BUSYWAIT_UNTIL(bitRead(SR_IRQ3_TRX_END) != 1, US_TO_RTIMERTICKS(200));
-	//flags.TRX_END = 1;
-
-	if (status != VSN_SPI_SUCCESS) {
-		if (status != VSN_SPI_COM_IN_PROGRESS) {
-			return status;
-		}
-
-		vsnTime_setTimeout(&timeout, 200);
-		while (status & (VSN_SPI_COM_IN_PROGRESS | VSN_SPI_BUS_BUSY)) {
-			status = vsnSPI_checkSPIstatus(rf2xxSPI);
-			if (!vsnTime_checkTimeout(&timeout)) {
-				return status;
-			}
-		}
-
-		if (status != VSN_SPI_SUCCESS) {
-			return status;
-		}
-	}
-
-	vsnTime_setTimeout(&timeout, 200);
-	while (!flags.TRX_END) {
-		if (POLL_MODE) flags.TRX_END = getIRQs().IRQ3_TRX_END;
-
-		if (!vsnTime_checkTimeout(&timeout)) {
-			LOG_ERR("Timeout TRX_END!=1\n");
-			flags.TRX_END = 1;
-		}
-	};
-
-    ENERGEST_OFF(ENERGEST_TYPE_TRANSMIT);
-
-	trac = extMode ? bitRead(SR_TRAC_STATUS) : TRAC_SUCCESS;
-
-	rf2xx_on(); // Go back to Rx mode
-
-	switch (trac) {
-    case TRAC_SUCCESS:
-        RF2XX_STATS_ADD(txSuccess);
-        return RADIO_TX_OK;
-
-    case TRAC_NO_ACK:
-        RF2XX_STATS_ADD(txNoAck);
-		LOG_DBG_("noACK ");
-        return RADIO_TX_NOACK;
-
-    case TRAC_CHANNEL_ACCESS_FAILURE:
-        RF2XX_STATS_ADD(txCollision);
-		LOG_DBG_("collision");
-        return RADIO_TX_COLLISION;
-
-    default:
-		LOG_DBG_("Err(trac=0x%02x)", trac);
-        return RADIO_TX_ERR;
-	}
-
-	LOG_DBG_("\n");
-	return transmit_len;
-}
-
-
-/*
-int
-rf2xx_prepare(const void *payload, unsigned short payload_len)
-{
-    if (payload_len > RF2XX_MAX_FRAME_SIZE - RF2XX_CRC_SIZE) {
-        LOG_ERR("Payload larger than radio buffer: %u > %u\n", payload_len, RF2XX_MAX_FRAME_SIZE - RF2XX_CRC_SIZE);
-        return RADIO_TX_ERR;
-    }
-
-    LOG_DBG("[rf2xxPrepare] ");
-
-    if (flags.SLEEP) {
-        rf2xx_wakeUp(); // Wake-up radio if it is asleep
-        LOG_DBG_("WakeUp ");
-    }
-
-	// Force radio into TRX_OFF
+    // Force radio into TRX_OFF mode
     regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
-    LOG_DBG_("TRX_OFF ");
-    vsnTime_delayUS(rf2xx_getTiming(TIME__FORCE_TRX_OFF));
+    RTIMER_BUSYWAIT(US_TO_RTIMERTICKS(time.FORCE_TRX_OFF));
 
-    ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS), "TRX_OFF not reached\n");
+    // Migrate to Tx mode
+    regWrite(RG_TRX_STATE, opts.pollMode ? TRX_CMD_PLL_ON : TRX_CMD_TX_ARET_ON);
 
-	// Depending on FRAME_RETRIES use extended or basic radio mode
-    if (extMode) {
-        regWrite(RG_TRX_STATE, TRX_CMD_TX_ARET_ON); // extended mode
-        LOG_DBG_("TX_ARET ");
-    } else {
-        regWrite(RG_TRX_STATE, TRX_CMD_PLL_ON);
-        LOG_DBG_("PLL_ON ");
-    }
+    // Wait Tx mode to be reached
+    RTIMER_BUSYWAIT_UNTIL(
+        !flags.PLL_LOCK,
+        US_TO_RTIMERTICKS(time.TRX_OFF_TO_PLL_ON)
+    );
 
-    vsnTime_delayUS(rf2xx_getTiming(TIME__TRX_OFF_TO_PLL_ON));
+    // If CRC is not offloaded to a radio, add precomputed CRC
+    #if !RF2XX_CONF_CHECKSUM
+    transmit_len += RF2XX_CRC_SIZE;
+    #endif
 
-    {
-        vsnSPI_ErrorStatus status;
-        vsnTime_Timeout timeout;
-        uint8_t length = payload_len;
-
-        uint8_t rxData[2 + RF2XX_MAX_FRAME_SIZE];
-        uint8_t txData[2 + RF2XX_MAX_FRAME_SIZE];
-
-        txData[0] = CMD_FB | CMD_WRITE;
-        txData[1] = length + RF2XX_CRC_SIZE; // CRC is always part of 802.15.4 frame
-
-        memcpy(txData+2, payload, length); // copy into appropriate position
-
-        #if !RF2XX_CONF_CHECKSUM // if we disable radio's built-in CRC check for some reason
-        {
-            uint16_t crc = crc16_data((uint8_t *)payload, length, 0x00);
-            memcpy(txData+2+payload_len, &crc, RF2XX_CRC_SIZE); // copy CRC after actual data
-            length += RF2XX_CRC_SIZE;
-            LOG_DBG_("CRC ");
-        }
-        #endif
-
-        vsnTime_setTimeout(&timeout, 200);
-        do {
-            status = vsnSPI_checkSPIstatus(rf2xxSPI);
-            if (!vsnTime_checkTimeout(&timeout)) {
-                LOG_WARN("Timeout waiting SPI\n");
-                return 0;
-            }
-        } while (status & (VSN_SPI_COM_IN_PROGRESS | VSN_SPI_BUS_BUSY));
-
-        ASSERT(0 == getCS(), "Something wrong with SPI-CS\n");
-        setCS();
-
-        // Start sending to radio buffer
-        LOG_DBG_("%ubytes ", length);
-        status = vsnSPI_transferDataTXRX(rf2xxSPI, txData, rxData, 2 + length, spiCallback);
-
-
-        if (status != VSN_SPI_SUCCESS) {
-            if (status != VSN_SPI_COM_IN_PROGRESS) {
-                return status;
-            }
-
-            vsnTime_setTimeout(&timeout, 200);
-
-            while (status & (VSN_SPI_COM_IN_PROGRESS | VSN_SPI_BUS_BUSY)) {
-                status = vsnSPI_checkSPIstatus(rf2xxSPI);
-                if (!vsnTime_checkTimeout(&timeout)) {
-                    return status;
-                }
-            }
-
-            if (status != VSN_SPI_SUCCESS) {
-                return status;
-            }
-        }
-    }
-
-    LOG_DBG_("\n");
-
-    return payload_len;
-}
-
-
-
-int
-rf2xx_transmit(unsigned short transmit_len)
-{
-    vsnTime_Timeout timeout;
-    uint8_t dummy __attribute__((unused));
-    uint8_t trac;
-
-    flags.value = 0; // clear all flags
-    dummy = regRead(RG_IRQ_STATUS); // clear IRQ
+    setCS();
 
     ENERGEST_ON(ENERGEST_TYPE_TRANSMIT);
 
-    setSLPTR();
-    clearSLPTR();
+	// Trigger transmit (see Manual p. 127, bottom)
+    // The radio will start Tx, first byte needs to be written within 16us
+    // (at default PA_BUF_LT and PA_LT)
+	setSLPTR();
+	clearSLPTR();
 
-	vsnTime_setTimeout(&timeout, 200);
-	while (!flags.TRX_END) { // will be released inside ISR
-		if (!vsnTime_checkTimeout(&timeout)) {
-			LOG_ERR("Timeout waiting TRX_END\n");
-			flags.TRX_END = 1;
-		}
-	};
+	// length is a command byte + size byte + payload size byte
+	status = vsnSPI_transferDataTX(rf2xxSPI, txBuffer, 2 + transmit_len, spiCallback);
+
+    // We expect SPI to work in polling mode (since interrupts are disabled, because of 6TISCH)
+    if (VSN_SPI_SUCCESS != status) {
+        return RADIO_TX_ERR;
+    }
+
+    // wait for transmit to complete
+    RTIMER_BUSYWAIT_UNTIL(
+        getIRQs().IRQ3_TRX_END, // TODO: Add non-polling mode
+        US_TO_RTIMERTICKS(RADIO_BYTE_AIR_TIME * transmit_len)
+    );
 
     ENERGEST_OFF(ENERGEST_TYPE_TRANSMIT);
 
-    if (extMode) {
-        trac = bitRead(SR_TRAC_STATUS);
-    } else {
-        trac = TRAC_SUCCESS;
-    }
+    trac = opts.autoCCA ? bitRead(SR_TRAC_STATUS) : TRAC_SUCCESS;
 
-	rf2xx_on(); // Go back to Rx mode
+    //rf2xx_on(); // Go back to Rx mode
 
 	switch (trac) {
-    case TRAC_SUCCESS:
-        RF2XX_STATS_ADD(txSuccess);
-        return RADIO_TX_OK;
+        case TRAC_SUCCESS:
+            //RF2XX_STATS_ADD(txSuccess);
+            return RADIO_TX_OK;
 
-    case TRAC_NO_ACK:
-        RF2XX_STATS_ADD(txNoAck);
-        return RADIO_TX_NOACK;
+        case TRAC_NO_ACK:
+            //RF2XX_STATS_ADD(txNoAck);
+            //LOG_DBG_("noACK ");
+            return RADIO_TX_NOACK;
 
-    case TRAC_CHANNEL_ACCESS_FAILURE:
-        RF2XX_STATS_ADD(txCollision);
-        return RADIO_TX_COLLISION;
+        case TRAC_CHANNEL_ACCESS_FAILURE:
+            //RF2XX_STATS_ADD(txCollision);
+            //LOG_DBG_("collision");
+            return RADIO_TX_COLLISION;
 
-    default:
-        return RADIO_TX_ERR;
+        default:
+            //LOG_DBG_("Err(trac=0x%02x)", trac);
+            return RADIO_TX_ERR;
 	}
 }
-*/
 
-int
-rf2xx_send(const void *payload, unsigned short payload_len)
-{
-	LOG_DBG("send\n");
-	rf2xx_prepare(payload, payload_len);
-	return rf2xx_transmit(payload_len);
+
+static int send(const void *payload, unsigned short payload_len) {
+	prepare(payload, payload_len);
+	return transmit(payload_len);
 }
 
-// Extend a bit this function
-int
-rf2xx_read(void *buf, unsigned short buf_len)
-{
+
+static int read(void *buf, unsigned short buf_len) {
     vsnSPI_ErrorStatus status;
-    vsnTime_Timeout timeout;
-    uint8_t length, trac;
-    uint8_t rxData[2 + RF2XX_MAX_FRAME_SIZE + RF2XX_LQI_SIZE];
-    uint8_t txData[2 + RF2XX_MAX_FRAME_SIZE + RF2XX_LQI_SIZE];
-    txData[0] = CMD_FB | CMD_READ;
-
-    LOG_DBG("[rf2xxRead] ");
-
-    vsnTime_setTimeout(&timeout, 200);
-    do {
-        status = vsnSPI_checkSPIstatus(rf2xxSPI);
-        if (!vsnTime_checkTimeout(&timeout)) {
-            RF2XX_STATS_ADD(spiError);
-            LOG_WARN("Timeout waiting SPI\n");
-            return 0;
-        }
-    } while (status & (VSN_SPI_COM_IN_PROGRESS | VSN_SPI_BUS_BUSY));
-
-    LOG_DBG_("SPI ");
+    uint8_t payload_len;
+    uint8_t trac;
+    uint8_t dummy __attribute__((unused));
+    uint16_t crc;
 
     setCS();
-    status = vsnSPI_transferDataTXRX(
-		rf2xxSPI,
-		txData,
-		rxData,
-		2 + RF2XX_MAX_FRAME_SIZE + RF2XX_LQI_SIZE,
-		spiCallback
-	);
+    status = vsnSPI_pullByteTXRX(rf2xxSPI, (CMD_FB | CMD_READ), &dummy); // command byte
+    status = vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, &payload_len); // length byte
 
-    if (status != VSN_SPI_SUCCESS) {
-        if (status != VSN_SPI_COM_IN_PROGRESS) {
-            RF2XX_STATS_ADD(spiError);
-            LOG_DBG_("ERROR\n");
-            return 0;
-        }
-
-        vsnTime_setTimeout(&timeout, 200);
-
-        while (status & (VSN_SPI_COM_IN_PROGRESS | VSN_SPI_BUS_BUSY)) {
-            status = vsnSPI_checkSPIstatus(rf2xxSPI);
-            if (!vsnTime_checkTimeout(&timeout)) {
-                RF2XX_STATS_ADD(spiError);
-                LOG_DBG_("ERROR\n");
-                return 0;
-            }
-        }
-
-        if (status != VSN_SPI_SUCCESS) {
-            RF2XX_STATS_ADD(spiError);
-            LOG_DBG_("ERROR\n");
-            return 0;
-        }
-    }
-
-
-
-    flags.TRX_END = 0; // Packet was read with all properties; await next packet;
-
-    length = rxData[1];
-
-    if (length < RF2XX_MIN_FRAME_SIZE || length > RF2XX_MAX_FRAME_SIZE) {
-        LOG_DBG_("!%ubytes\n", length);
+    if (payload_len >= 3 && payload_len <= 127) {
+        // payload_len is not within valid range
+        clearCS();
         return 0;
     }
 
-    length -= RF2XX_CRC_SIZE; // CRC is part of IEEE 802.15.4 frame
+    // CRC is always part of IEEE 802.15.4 frame
+    payload_len -= RF2XX_CRC_SIZE;
+
+    // Check if content will fit into buffer
+    if (buf_len < payload_len) {
+        clearCS();
+        return 0;
+    }
+
+    // Transfer payload
+    for (uint8_t i = 0; i < payload_len; i++) {
+        status = vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, buf + i);
+    }
+
+    // transfer CRC (2 bytes)
+    status = vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, (uint8_t *)&crc);
+    status = vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, (uint8_t *)&crc + 1);
+
+    // transfer LQI (1 byte)
+    status = vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, &rf2xx_last_lqi);
+
+    // Done!
+    clearCS();
 
     #if !RF2XX_CONF_CHECKSUM
     {
-        LOG_DBG_("CRC ");
-        // received CRC
-        uint16_t crc;
-        memcpy(&crc, rxData + 2 + length, RF2XX_CRC_SIZE);
-
-        // calculated CRC
-        uint16_t _crc = crc16_data((const uint8_t *)(rxData + 2), length, 0x00);
-
+        uint16_t _crc = crc16_data(buf, payload_len, 0x00);
         if (crc != _crc) {
-            LOG_DBG_("invalid\n");
+            clearCS();
             return 0;
         }
     }
     #endif
 
-    memcpy(buf, rxData+2, length); // Copy packet to buffer
-    LOG_DBG_("%ubytes ", length);
+    if (!opts.pollMode) {
+        // measured on 8 symbols (128us) @ 250kbps
+        rf2xx_last_rssi = getRSSI();
 
+        packetbuf_set_attr(PACKETBUF_ATTR_LINK_QUALITY, rf2xx_last_lqi);
+    	packetbuf_set_attr(PACKETBUF_ATTR_RSSI, rf2xx_last_rssi);
+    }
+
+    /*
     // Read TRAC status either if it is not mandatory (mainly for debugging)
 	trac = extMode ? bitRead(SR_TRAC_STATUS) : TRAC_SUCCESS;
 
     switch (trac) {
     case TRAC_SUCCESS:
         // Everything is OK. CRC matches.
-        LOG_DBG_("TRAC=OK ");
+        //LOG_DBG_("TRAC=OK ");
         break;
 
     case TRAC_SUCCESS_WAIT_FOR_ACK:
         // TODO: How do we inform CONTIKI about NO-ACK?
-        LOG_DBG_("TRAC=NO-ACK ");
+        //LOG_DBG_("TRAC=NO-ACK ");
         break;
 
     case TRAC_INVALID:
         // Something went wrong with frame.
         // Read too fast? Buffer issues?
         // There is a change that frame is corrupted. No sense to make LQI.
-        LOG_DBG_("TRAC=INVALID ");
+        //LOG_DBG_("TRAC=INVALID ");
         return 0;
 
     default:
         // Any other state is invalid in RX mode
-        LOG_DBG_("TRAC=%u (INVALID) ", trac);
+        //LOG_DBG_("TRAC=%u (INVALID) ", trac);
         return 0;
     }
+    */
 
-    rf2xx_last_lqi = rxData[2 + length + RF2XX_CRC_SIZE];
-
-    LOG_DBG_("LQI=%u; RSSI=%u;\n", rf2xx_last_lqi, rf2xx_last_rssi);
-
-	if (!POLL_MODE) {
-    	packetbuf_set_attr(PACKETBUF_ATTR_LINK_QUALITY, rf2xx_last_lqi);
-    	packetbuf_set_attr(PACKETBUF_ATTR_RSSI, rf2xx_last_rssi);
-	}
-
-    return length;
+    return payload_len;
 }
 
 
-// TODO: Fix to operate with flags.CCA
-// TODO: Fix to first check current radio state, the perform appropriate migration
-int
-rf2xx_cca(void)
-{
-	LOG_DBG("CCA\n");
-    // Return 1 for IDLE, 0 for BUSY ...
-	if (extMode) {
-        // Running in extended mode TX_ARET state will take care of CCA
-        return 1;
-	}
-
-	uint8_t cca, dummy __attribute__((unused));
-	//vsnTime_Timeout timeout;
-
-	// Wake up
-	if (flags.SLEEP) {
-		rf2xx_wakeUp();
-	}
-
-	// Make sure it is in TRX_OFF state
-	regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
-	//vsnTime_delayUS(rf2xx_getTiming(TIME__FORCE_TRX_OFF));
-	RTIMER_BUSYWAIT(US_TO_RTIMERTICKS(rf2xx_getTiming(TIME__FORCE_TRX_OFF)));
-
-	ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS), "TRX_OFF not reached\n");
 
 
-	bitWrite(SR_RX_PDT_DIS, 1); // disable reception; prevent interrupts; it will perform sensing;
+
+static int cca(void) {
+    // return 1 for IDLE, 0 for BUSY channel
+
+    if (opts.autoCCA) return 1; // extended mode does CCA on its own.
+
+
+    regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
+    RTIMER_BUSYWAIT(US_TO_RTIMERTICKS(time.FORCE_TRX_OFF));
+
+	bitWrite(SR_RX_PDT_DIS, 1); // disable reception
 	regWrite(RG_TRX_STATE, TRX_CMD_PLL_ON);
-	//vsnTime_delayUS(rf2xx_getTiming(TIME__TRX_OFF_TO_PLL_ON));
-	RTIMER_BUSYWAIT(US_TO_RTIMERTICKS(rf2xx_getTiming(TIME__TRX_OFF_TO_PLL_ON)));
 
-	//dummy = regRead(RG_IRQ_STATUS); // clear IRQ
+    bitWrite(SR_CCA_REQUEST, 1); // trigger CCA sensing
+    RTIMER_BUSYWAIT(US_TO_RTIMERTICKS(time.CCA));
 
-	bitWrite(SR_CCA_REQUEST, 1); // trigger CCA sensing
-	//vsnTime_delayUS(rf2xx_getTiming(TIME__CCA));
-	RTIMER_BUSYWAIT(US_TO_RTIMERTICKS(rf2xx_getTiming(TIME__CCA)));
+    // Read CCA value
+	uint8_t cca = bitRead(SR_CCA_STATUS); // 1 = IDLE, 0 = BUSY
 
-	// Read CCA value
-	cca = bitRead(SR_CCA_STATUS); // 1 = IDLE, 0 = BUSY
+    // Back to TRX_OFF
+    regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
+	RTIMER_BUSYWAIT(US_TO_RTIMERTICKS(time.FORCE_TRX_OFF));
 
-	// Back to TRX_OFF state
-	regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
-	//vsnTime_delayUS(rf2xx_getTiming(TIME__FORCE_TRX_OFF));
-	RTIMER_BUSYWAIT(US_TO_RTIMERTICKS(rf2xx_getTiming(TIME__FORCE_TRX_OFF)));
+    bitWrite(SR_RX_PDT_DIS, 0); // enable reception in RX mode;
 
-	bitWrite(SR_RX_PDT_DIS, 0); // enable reception in RX mode;
+    on();
 
-	rf2xx_on(); // enable again RX mode
-
-	return cca;
+    return cca;
 }
 
 
-int
-rf2xx_receiving_packet(void)
-{
-    //int receivingPacket = (flags.RX_START && vsnTime_checkTimeout(&rxTimeout)) && !flags.TRX_END;
-    //LOG_DBG("receivingPacket: %u", receivingPacket);
-    //return receivingPacket;
-	if (POLL_MODE) {
-		rf2xx_irq_t irq = getIRQs();
-		return irq.IRQ5_AMI && !irq.IRQ3_TRX_END;
-	}
+static int receiving_packet(void) {
+    if (opts.pollMode) return getIRQs().IRQ2_RX_START;
 
-    return (flags.RX_START && vsnTime_checkTimeout(&rxTimeout)) && !flags.TRX_END;
+    return flags.RX_START && !flags.TRX_END;
 }
 
+static int pending_packet(void) {
+    if (opts.pollMode) return getIRQs().IRQ3_TRX_END;
 
-int
-rf2xx_pending_packet(void)
-{
-    //int pendingPacket = vsnTime_checkTimeout(&rxTimeout) && flags.TRX_END;
-    //LOG_DBG("PendingPacket: %u", pendingPacket);
-    //return pendingPacket;
-	if (POLL_MODE) return getIRQs().IRQ3_TRX_END;
-
-    return vsnTime_checkTimeout(&rxTimeout) && flags.TRX_END;
+    return flags.TRX_END; // this was set in interrupt
 }
 
-
-int
-rf2xx_on(void)
-{
-	//LOG_DBG("On\n");
+static int on(void) {
     uint8_t dummy __attribute__((unused));
 
-    //LOG_DBG("[rf2xxOn] ");
-
-    if (flags.SLEEP) {
-        rf2xx_wakeUp();
-        LOG_DBG("WakeUp\n");
-    }
-
 	regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
-	RTIMER_BUSYWAIT_UNTIL(
-		bitRead(SR_TRX_STATUS) != TRX_STATUS_TRX_OFF,
-		US_TO_RTIMERTICKS(rf2xx_getTiming(TIME__FORCE_TRX_OFF))
-	);
+	RTIMER_BUSYWAIT(US_TO_RTIMERTICKS(time.FORCE_TRX_OFF));
 
-	flags.value = 0;
+    flags.value = 0;
 
-	regWrite(RG_TRX_STATE, (extMode || AUTOACK) ? TRX_CMD_RX_AACK_ON : TRX_CMD_RX_ON);
+    regWrite(RG_TRX_STATE, opts.autoACK ? TRX_CMD_RX_AACK_ON : TRX_CMD_RX_ON);
 
 	RTIMER_BUSYWAIT_UNTIL(
-		getIRQs().IRQ0_PLL_LOCK != 1,
-		US_TO_RTIMERTICKS(rf2xx_getTiming(TIME__TRX_OFF_TO_RX_ON) * 2)
+		!flags.PLL_LOCK, //getIRQs().IRQ0_PLL_LOCK,
+		US_TO_RTIMERTICKS(time.TRX_OFF_TO_RX_ON)
 	);
 
-	flags.PLL_LOCK = 1;
+    flags.PLL_LOCK = 1;
 
-	ENERGEST_ON(ENERGEST_TYPE_LISTEN);
-
-	//LOG_DBG_("\n");
+    ENERGEST_ON(ENERGEST_TYPE_LISTEN);
 
     return 1;
 }
 
 
-int
-rf2xx_off(void)
-{
-	LOG_DBG("Off\n");
-    uint8_t dummy __attribute__((unused));
+static int off(void) {
 
-    if (flags.SLEEP) {
-        rf2xx_wakeUp();
-    }
+    regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
+    RTIMER_BUSYWAIT(US_TO_RTIMERTICKS(time.FORCE_TRX_OFF));
 
-	regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
-	RTIMER_BUSYWAIT_UNTIL(
-		bitRead(SR_TRX_STATUS) != TRX_STATUS_TRX_OFF,
-		US_TO_RTIMERTICKS(rf2xx_getTiming(TIME__FORCE_TRX_OFF))
-	);
-    
-	ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
+    ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
+
     return 1;
 }
-
 
 
 void rf2xx_isr(void) {
@@ -1316,16 +923,16 @@ void rf2xx_isr(void) {
 		flags.AMI = 0;
 		flags.TRX_END = 0;
 
-		RF2XX_STATS_ADD(rxDetected);
+		//RF2XX_STATS_ADD(rxDetected);
 
 		// When using non-extended mode, RSSI should be read on RX_START IRQ
 		//if (!extMode) rf2xx_last_rssi = 3 * bitRead(SR_RSSI);
-		if (!extMode) rf2xx_last_rssi = rf2xx_RSSI();
+		if (!opts.pollMode) rf2xx_last_rssi = getRSSI();
 	}
 
 	if (irq.IRQ5_AMI) {
 		flags.AMI = 1;
-		RF2XX_STATS_ADD(rxAddrMatch);
+		//RF2XX_STATS_ADD(rxAddrMatch);
 	}
 
 	if (irq.IRQ6_TRX_UR) {
@@ -1338,17 +945,17 @@ void rf2xx_isr(void) {
 
 		// In extended mode IRQ3_TRX_END is best time to read RSSI
 		//if (extMode) rf2xx_last_rssi = regRead(RG_PHY_ED_LEVEL);
-		if (extMode) rf2xx_last_rssi = rf2xx_ED_LEVEL();
+		//if (extMode) rf2xx_last_rssi = rf2xx_ED_LEVEL();
 
 
 		if (flags.RX_START) {
 			last_packet_timestamp = RTIMER_NOW();
-			RF2XX_STATS_ADD(rxSuccess);
+			//RF2XX_STATS_ADD(rxSuccess);
 
 			// inform process about packet
-			if (!POLL_MODE) process_poll(&rf2xx_process);
+			if (!opts.pollMode) process_poll(&rf2xx_process);
 		} else {
-			RF2XX_STATS_ADD(txCount);
+			//RF2XX_STATS_ADD(txCount);
 		}
 	}
 
@@ -1363,46 +970,6 @@ void rf2xx_isr(void) {
 }
 
 
-
-
-
-
-
-
-
-
-int
-rf2xx_sleep(void) {
-	#warning "FIX rf2xx_sleep"
-    rf2xx_off(); // This will put radio into TRX_OFF mode
-
-    setSLPTR(); // SLP_TR pin will trigger migration to SLEEP state
-    //vsnTime_delayUS(rf2xx_getTiming(TIME__TRX_OFF_TO_SLEEP));
-	RTIMER_BUSYWAIT(rf2xx_getTiming(TIME__TRX_OFF_TO_SLEEP));
-    flags.SLEEP = 1;
-
-    return 1;
-}
-
-int rf2xx_wakeUp(void)
-{
-	if (flags.SLEEP || getSLPTR())
-	{
-		uint8_t dummy __attribute__((unused));
-
-		clearSLPTR(); // release SLP_TR pin and will go out of SLEEP state
-		//vsnTime_delayUS(rf2xx_getTiming(TIME__SLEEP_TO_TRX_OFF));
-		RTIMER_BUSYWAIT(rf2xx_getTiming(TIME__SLEEP_TO_TRX_OFF));
-		//dummy = regRead(RG_IRQ_STATUS); // clear, because IRQ4_AWAKE_END was triggered
-		flags.SLEEP = 0;
-	}
-
-    return 1;
-}
-
-
-#if CONTIKI
-
 PROCESS_THREAD(rf2xx_process, ev, data)
 {
 	int len;
@@ -1411,14 +978,14 @@ PROCESS_THREAD(rf2xx_process, ev, data)
 	LOG_INFO("AT86RF2xx driver process started!\n");
 
 	while(1) {
-		PROCESS_YIELD_UNTIL(!POLL_MODE && ev == PROCESS_EVENT_POLL);
+		PROCESS_YIELD_UNTIL(!opts.pollMode && ev == PROCESS_EVENT_POLL);
 
-        RF2XX_STATS_ADD(rxToStack);
-		LOG_DBG("calling receiver callback\n");
+        //RF2XX_STATS_ADD(rxToStack);
+		//LOG_DBG("calling receiver callback\n");
 
 		packetbuf_clear();
 		packetbuf_set_attr(PACKETBUF_ATTR_TIMESTAMP, last_packet_timestamp);
-		len = rf2xx_read(packetbuf_dataptr(), PACKETBUF_SIZE);
+		len = read(packetbuf_dataptr(), PACKETBUF_SIZE);
 
 		packetbuf_set_datalen(len);
 
@@ -1428,18 +995,8 @@ PROCESS_THREAD(rf2xx_process, ev, data)
 	PROCESS_END();
 }
 
-/*
-PROCESS_THREAD(rf2xx_calibration_process, ev, data)
-{
-	PROCESS_BEGIN();
-	LOG_DBG("AT86RF2xx calibration process started");
-	while(1) {
-		rf2xx_calibration();
-		PROCESS_PAUSE();
-	}
-	PROCESS_END();
-}
-*/
+
+
 
 static radio_result_t
 get_value(radio_param_t param, radio_value_t *value) {
@@ -1452,30 +1009,30 @@ get_value(radio_param_t param, radio_value_t *value) {
 			return RADIO_RESULT_OK;
 
 		case RADIO_PARAM_CHANNEL:
-			*value = (radio_value_t)rf2xx_getChannel();
+			*value = (radio_value_t)getChannel();
 			return RADIO_RESULT_OK;
 
 		case RADIO_PARAM_PAN_ID:
-			*value = (radio_value_t)rf2xx_getPanId();
+			*value = (radio_value_t)getPanID();
 			return RADIO_RESULT_OK;
 
 		case RADIO_PARAM_16BIT_ADDR:
-			*value = (radio_value_t)rf2xx_getShortAddr();
+			*value = (radio_value_t)getShortAddr();
 			return RADIO_RESULT_OK;
 
 		case RADIO_PARAM_RX_MODE:
 			*value = 0;
-			if (getAddrFilter()) *value |= RADIO_RX_MODE_ADDRESS_FILTER;
-			if (getAutoAck()) *value |= RADIO_RX_MODE_AUTOACK;
-			if (getPollMode()) *value |= RADIO_RX_MODE_POLL_MODE;
+			if (opts.addrFilter) *value |= RADIO_RX_MODE_ADDRESS_FILTER;
+			if (opts.autoACK) *value |= RADIO_RX_MODE_AUTOACK;
+			if (opts.pollMode) *value |= RADIO_RX_MODE_POLL_MODE;
 			return RADIO_RESULT_OK;
 
 		case RADIO_PARAM_TX_MODE:
-			if (getSendOnCca()) *value |= RADIO_TX_MODE_SEND_ON_CCA;
+			if (opts.autoCCA) *value |= RADIO_TX_MODE_SEND_ON_CCA;
 			return RADIO_RESULT_OK;
 
 		case RADIO_PARAM_TXPOWER:
-			*value = rf2xx_getTxPower();
+			*value = getTxPower();
 			return RADIO_RESULT_OK;
 
 		case RADIO_PARAM_CCA_THRESHOLD:
@@ -1490,19 +1047,19 @@ get_value(radio_param_t param, radio_value_t *value) {
 			return RADIO_RESULT_OK;
 
 		case RADIO_CONST_CHANNEL_MIN:
-			*value = rf2xx_getMinChannel();
+			*value = getMinChannel();
 			return RADIO_RESULT_OK;
 
 		case RADIO_CONST_CHANNEL_MAX:
-			*value = rf2xx_getMaxChannel();
+			*value = getMaxChannel();
 			return RADIO_RESULT_OK;
 
 		case RADIO_CONST_TXPOWER_MIN:
-			*value = rf2xx_getMinPwr();
+			*value = getMinPwr();
 			return RADIO_RESULT_OK;
 
 		case RADIO_CONST_TXPOWER_MAX:
-			*value = rf2xx_getMaxPwr();
+			*value = getMaxPwr();
 			return RADIO_RESULT_OK;
 
 		case RADIO_CONST_PHY_OVERHEAD:
@@ -1538,45 +1095,54 @@ set_value(radio_param_t param, radio_value_t value) {
 	case RADIO_PARAM_POWER_MODE:
 		switch (value) {
 			case RADIO_POWER_MODE_ON:
-				rf2xx_on();
+				on();
 				return RADIO_RESULT_OK;
 			case RADIO_POWER_MODE_OFF:
-				rf2xx_off();
+				off();
 				return RADIO_RESULT_OK;
 			default:
 				return RADIO_RESULT_INVALID_VALUE;
 		}
 
 	case RADIO_PARAM_CHANNEL:
-		if (value >= rf2xx_getMinChannel() && value <= rf2xx_getMaxChannel()) {
-			rf2xx_setChannel(value);
+		if (value >= getMinChannel() && value <= getMaxChannel()) {
+			setChannel(value);
 			return RADIO_RESULT_OK;
 		}
 		return RADIO_RESULT_INVALID_VALUE;
 		
 
 	case RADIO_PARAM_PAN_ID:
-		rf2xx_setPanId(value);
+		setPanID(value);
 		return RADIO_RESULT_OK;
 
 	case RADIO_PARAM_16BIT_ADDR:
-		rf2xx_setShortAddr(value);
+		setShortAddr(value);
 		return RADIO_RESULT_OK;
 
 	case RADIO_PARAM_RX_MODE:
 		LOG_DBG("RADIO_PARAM_RX_MODE 0x%02x\n", value);
-		setAddrFilter(value & RADIO_RX_MODE_ADDRESS_FILTER);
-		setAutoAck(value & RADIO_RX_MODE_AUTOACK);
-		setPollMode(value & RADIO_RX_MODE_POLL_MODE);
+        opts.addrFilter = !!(value & RADIO_RX_MODE_ADDRESS_FILTER);
+        opts.autoACK = !!(value & RADIO_RX_MODE_AUTOACK);
+        opts.pollMode = !!(value & RADIO_RX_MODE_POLL_MODE);
+
+		regWrite(RG_IRQ_MASK, opts.pollMode ? 0x00 : DEFAULT_IRQ_MASK);
+
+
+		//setAddrFilter(value & RADIO_RX_MODE_ADDRESS_FILTER);
+		//setAutoAck(value & RADIO_RX_MODE_AUTOACK);
+		//setPollMode(value & RADIO_RX_MODE_POLL_MODE);
 		return RADIO_RESULT_OK;
 
 	case RADIO_PARAM_TX_MODE:
-		setSendOnCca(value & RADIO_TX_MODE_SEND_ON_CCA);
+		opts.autoCCA = !!(value & RADIO_TX_MODE_SEND_ON_CCA);
+		// Disable automatic CCA when MAX_CSMA_RETRIES = 7
+		bitWrite(SR_MAX_CSMA_RETRIES, opts.autoCCA ? 7 : RF2XX_CONF_MAX_CSMA_RETRIES);
 		return RADIO_RESULT_OK;
 
 	case RADIO_PARAM_TXPOWER:
-		if (value >= rf2xx_getMinPwr() && value <= rf2xx_getMaxPwr()) {
-			rf2xx_setTxPower(value);
+		if (value >= getMinPwr() && value <= getMaxPwr()) {
+			setTxPower(value);
 			return RADIO_RESULT_OK;
 		}
 		return RADIO_RESULT_INVALID_VALUE;
@@ -1601,7 +1167,7 @@ static radio_result_t get_object(radio_param_t param, void *dest, size_t size) {
 
 	switch (param) {
 		case RADIO_PARAM_64BIT_ADDR:
-			rf2xx_getLongAddr((uint8_t *)dest, size);
+			getLongAddr((uint8_t *)dest, size);
 			return RADIO_RESULT_OK;
 
 		case RADIO_PARAM_LAST_PACKET_TIMESTAMP:
@@ -1624,7 +1190,7 @@ static radio_result_t set_object(radio_param_t param, const void *src, size_t si
 	if (src == NULL) return RADIO_RESULT_ERROR;
 	switch (param) {
 		case RADIO_PARAM_64BIT_ADDR:
-			rf2xx_setLongAddr((const uint8_t *)src, size);
+			setLongAddr((const uint8_t *)src, size);
 			return RADIO_RESULT_OK;
 
 		default:
@@ -1634,136 +1200,36 @@ static radio_result_t set_object(radio_param_t param, const void *src, size_t si
 
 
 const struct radio_driver rf2xx_driver = {
-	rf2xx_init,
-	rf2xx_prepare,
-	rf2xx_transmit,
-	rf2xx_send,
-	rf2xx_read,
-	rf2xx_cca,
-	rf2xx_receiving_packet,
-	rf2xx_pending_packet,
-	rf2xx_on,
-	rf2xx_off,
+	init,
+	prepare,
+	transmit,
+	send,
+	read,
+	cca,
+	receiving_packet,
+	pending_packet,
+	on,
+	off,
 	get_value,
 	set_value,
 	get_object,
 	set_object,
 };
 
-
-#endif // CONTIKI
-
+// CONTIKI
 
 
 
 
 
-void rf2xx_setChannel(uint8_t ch) {
-	switch (rf2xx_radio) {
-		case RF2XX_AT86RF233:
-		//case RF2XX_AT86RF232:
-		case RF2XX_AT86RF231:
-		case RF2XX_AT86RF230:
-		case RF2XX_AT86RF212:
-			bitWrite(SR_CHANNEL, ch);
-			if (flags.PLL_LOCK) {
-				RTIMER_BUSYWAIT_UNTIL(
-					getIRQs().IRQ0_PLL_LOCK != 1,
-					US_TO_RTIMERTICKS(20)
-				);
-			}
-			break;
 
-		default:
-			break;
-	}
-
-	LOG_INFO("Channel=%u Freq=%.2fMHz\n", rf2xx_getChannel(), rf2xx_getFrequency());
-}
-
-uint8_t rf2xx_getChannel(void) {
-	return bitRead(SR_CHANNEL);
-}
-
-void rf2xx_setTxPower(uint8_t pwr) {
-	switch (rf2xx_radio) {
-		case RF2XX_AT86RF212:
-			bitWrite(SR_TX_PWR_RF21x_ALL, pwr);
-			break;
-
-		case RF2XX_AT86RF230:
-		case RF2XX_AT86RF231:
-		case RF2XX_AT86RF233:
-		default:
-			bitWrite(SR_TX_PWR, pwr);
-			break;
-	}
-}
-
-uint8_t rf2xx_getTxPower(void) {
-	switch (rf2xx_radio) {
-		case RF2XX_AT86RF212:
-			return bitRead(SR_TX_PWR_RF21x_ALL);
-
-		case RF2XX_AT86RF230:
-		case RF2XX_AT86RF231:
-		case RF2XX_AT86RF233:
-		default:
-			return bitRead(SR_TX_PWR);
-	}
-}
-
-void rf2xx_setPanId(uint16_t pan) {
-	regWrite(RG_PAN_ID_0, pan & 0xFF);
-	regWrite(RG_PAN_ID_1, pan >> 8);
-	LOG_INFO("PAN == 0x%02x\n", pan);
-}
-
-
-uint16_t rf2xx_getPanId(void) {
-	uint16_t pan = ((uint16_t)regRead(RG_PAN_ID_1) << 8) & 0xFF00;
-    pan |= (uint16_t)regRead(RG_PAN_ID_0) & 0xFF;
-    return pan;
-}
-
-uint16_t rf2xx_getShortAddr(void) {
-	uint16_t addr = ((uint16_t)regRead(RG_SHORT_ADDR_1) << 8) & 0xFF00;
-    addr |= (uint16_t)regRead(RG_SHORT_ADDR_0) & 0xFF;
-    return addr;
-}
-
-void rf2xx_setShortAddr(uint16_t addr) {
-	regWrite(RG_SHORT_ADDR_0, addr & 0xFF);
-	regWrite(RG_SHORT_ADDR_1, addr >> 8);
-	LOG_INFO("Short addr == 0x%02x\n", addr);
-}
-
-void rf2xx_setLongAddr(const uint8_t * addr, uint8_t len) {
-    if (len > 8) len = 8;
-
-    // The usual representation of MAC address has big-endianess. However,
-    // This radio uses little-endian, so the order of bytes has to be reversed.
-	// When we define IEEE addr, the most important byte is ext_addr[0], while
-	// on radio RG_IEEE_ADDR_0 must contain the lowest/least important byte.
-    for (uint8_t i = 0; i < len; i++) {
-        regWrite(RG_IEEE_ADDR_7 - i, addr[i]);
-    }
-}
-
-
-void rf2xx_getLongAddr(uint8_t *addr, uint8_t len) {
-	if (len > 8) len = 8;
-    for (uint8_t i = 0; i < len; i++) {
-        addr[i] = regRead(RG_IEEE_ADDR_7 - i);
-    }
-}
 
 
 
 
 
 // TODO: FIX: return signed integer with proper value
-int8_t rf2xx_ED_LEVEL(void) {
+int8_t get_ED_LEVEL(void) {
 	// Value is refreshed every 128us.
 
 	// value should be in range [0x00, 0x54]
@@ -1780,8 +1246,8 @@ int8_t rf2xx_ED_LEVEL(void) {
 
 }
 
-// TODO: FIX: return signed integer with proper value
-int8_t rf2xx_RSSI(void) {
+// This one is for SNR measurements
+/*int8_t rf2xx_RSSI(void) {
 	// RSSI value is refreshed every 2us.
 
 	// value should be in range [0x00, 0x1C] or [0, 28] in decimal
@@ -1800,12 +1266,12 @@ int8_t rf2xx_RSSI(void) {
 	int8_t rssi = -91 + 3 * (bitRead(SR_RSSI) - 1);
 	//LOG_DBG("RSSI=%i\n", rssi);
 	return rssi;
-}
+}*/
 
 
-int8_t rf2xx_rssi(void) {
-	return extMode ? rf2xx_ED_LEVEL() : rf2xx_RSSI();
-}
+/*int8_t rf2xx_rssi(void) {
+	return opts.pollMode ? rf2xx_ED_LEVEL() : rf2xx_RSSI();
+}*/
 
 /*
 // TODO: Should this be split into two functions?
@@ -1939,7 +1405,7 @@ uint8_t regRead(uint8_t addr)
 
     addr = (addr & CMD_REG_MASK) | CMD_REG | CMD_READ;
 
-    do {
+    /* do {
         vsnTime_setTimeout(&timeout, 200);
         do {
             status = vsnSPI_checkSPIstatus(rf2xxSPI);
@@ -1947,28 +1413,27 @@ uint8_t regRead(uint8_t addr)
 				LOG_ERR("SPI timeout\n");
                 break;
             }
-        } while (status & (VSN_SPI_COM_IN_PROGRESS | VSN_SPI_BUS_BUSY));
+        } while (status & (VSN_SPI_COM_IN_PROGRESS | VSN_SPI_BUS_BUSY));*/
 
         setCS();
         status = vsnSPI_pullByteTXRX(rf2xxSPI, addr, &value);
         status |= vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, &value);
         clearCS();
 
-    } while (status != VSN_SPI_SUCCESS);
+    //} while (status != VSN_SPI_SUCCESS);
 
     return value;
 }
 
 
-void regWrite(uint8_t addr, uint8_t value)
-{
+void regWrite(uint8_t addr, uint8_t value) {
     vsnSPI_ErrorStatus status;
 	vsnTime_Timeout timeout;
     uint8_t dummy __attribute__((unused));
 
     addr = (addr & CMD_REG_MASK) | CMD_REG | CMD_WRITE;
 
-    do {
+    /*do {
         vsnTime_setTimeout(&timeout, 200);
         do {
             status = vsnSPI_checkSPIstatus(rf2xxSPI);
@@ -1976,14 +1441,14 @@ void regWrite(uint8_t addr, uint8_t value)
 				LOG_ERR("SPI timeout\n");
                 break;
             }
-        } while (status & (VSN_SPI_COM_IN_PROGRESS | VSN_SPI_BUS_BUSY));
+        } while (status & (VSN_SPI_COM_IN_PROGRESS | VSN_SPI_BUS_BUSY));*/
 
         setCS();
         status = vsnSPI_pullByteTXRX(rf2xxSPI, addr, &dummy);
         status |= vsnSPI_pullByteTXRX(rf2xxSPI, value, &dummy);
         clearCS();
 
-    } while (status != VSN_SPI_SUCCESS);
+    //} while (status != VSN_SPI_SUCCESS);
 }
 
 

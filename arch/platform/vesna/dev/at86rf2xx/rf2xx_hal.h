@@ -2,27 +2,129 @@
 #define RF2XX_HAL_H_
 
 #include <stdint.h>
-#include <string.h>
-#include <stdio.h>
-
-#include "stm32f10x_rcc.h"
-#include "stm32f10x_exti.h"
-#include "stm32f10x_gpio.h"
-
-//#include "vsntime.h"
+#include "rf2xx_registermap.h"
 #include "vsnspi_new.h"
 
-#include "rf2xx_registermap.h"
-#include "rf2xx_arch.h"
-#include "rf2xx.h"
+#define RF2XX_CONF_CALIBRATION_PERIOD   (240) // seconds (~4min)
+
+// Radio identification procedure
+// Manfacturer ID is same for all radios == 0x00 0x1F
+#define RF2XX_MAN_ID_0			(0x1F)
+#define RF2XX_MAN_ID_1			(0x00)
 
 
-#define RF2XX_MAX_FRAME_SIZE	(127)
-#define RF2XX_MIN_FRAME_SIZE	(3)
-#define RF2XX_CRC_SIZE			(2)
-#define RF2XX_LQI_SIZE			(1)
-#define RF2XX_MAX_PAYLOAD_SIZE	(RF2XX_MAX_FRAME_SIZE - RF2XX_CRC_SIZE)
 
+#define RF2XX_UNDEFINED     (0x00)
+#define RF2XX_AT86RF212     (0x07)
+#define RF2XX_AT86RF231     (0x03)
+#define RF2XX_AT86RF230     (0x02)
+//#define RF2XX_AT86RF232     (0x0A) // was never tested
+#define RF2XX_AT86RF233     (0x0B)
+
+
+
+
+
+
+// Maximum supported speed is 8MHz
+#define RF2XX_SPI_SPEED			((uint32_t)8000000)
+
+
+// Board specific configurations
+#if AT86RF2XX_BOARD_SNR
+	#define SPI_PORT 			(VSN_SPI2)
+
+	// Inverted chip select
+	#define CSN_PIN				(GPIO_Pin_12)
+	#define CSN_PORT			(GPIOB)
+
+	// (Optional) DIG2 -- for timing
+	#define DIG2_PIN			(GPIO_Pin_7)
+	#define DIG2_PORT			(GPIOB)
+
+	// IRQ -- interrupts from radio
+	#define IRQ_PIN				(GPIO_Pin_9)
+	#define IRQ_PORT			(GPIOC)
+
+	// RSTN -- inverted RESET
+	#define RSTN_PIN			(GPIO_Pin_11)
+	#define RSTN_PORT			(GPIOC)
+
+	// Multi-functional pin
+	#define SLP_TR_PIN			(GPIO_Pin_10)
+	#define SLP_TR_PORT			(GPIOC)
+
+	// Mapping IRQ to ISR
+	#define EXTI_IRQ_LINE		(EXTI_Line9)
+	#define EXTI_IRQ_PORT		(GPIO_PortSourceGPIOC)
+	#define EXTI_IRQ_PIN		(GPIO_PinSource9)
+	#define EXTI_IRQ_CHANNEL	(EXTI9_5_IRQn)
+
+
+#elif AT86RF2XX_BOARD_ISMTV_V1_0
+	#define SPI_PORT			(VSN_SPI1)
+
+	// Inverted chip select
+	#define CSN_PIN				(GPIO_Pin_0)
+	#define CSN_PORT			(GPIOA)
+
+	// (Optional) DIG2 -- for timing
+	#define DIG2_PIN			(GPIO_Pin_1)
+	#define DIG2_PORT			(GPIOA)
+
+	// IRQ -- interrupts from radio
+	#define IRQ_PIN				(GPIO_Pin_3)
+	#define IRQ_PORT			(GPIOA)
+
+	// RSTN -- inverted RESET
+	#define RSTN_PIN			(GPIO_Pin_13)
+	#define RSTN_PORT			(GPIOA)
+
+	// Multi-functional pin
+	#define SLP_TR_PIN			(GPIO_Pin_15)
+	#define SLP_TR_PORT			(GPIOA)
+
+	// Mapping IRQ to ISR
+	#define EXTI_IRQ_LINE		(EXTI_Line3)
+	#define EXTI_IRQ_PORT		(GPIO_PortSourceGPIOA)
+	#define EXTI_IRQ_PIN		(GPIO_PinSource3)
+	#define EXTI_IRQ_CHANNEL	(EXTI3_IRQn)
+
+
+#elif AT86RF2XX_BOARD_ISMTV_V1_1
+	#define SPI_PORT			(VSN_SPI1)
+
+	// Inverted chip select
+	#define CSN_PIN				(GPIO_Pin_0)
+	#define CSN_PORT			(GPIOA)
+
+	// (Optional) DIG2 -- for timing
+	//#define DIG2_PIN			(GPIO_Pin_1)
+	//#define DIG2_PORT			(GPIOA)
+
+	// IRQ -- interrupts from radio
+	#define IRQ_PIN				(GPIO_Pin_3)
+	#define IRQ_PORT			(GPIOA)
+
+	// RSTN -- inverted RESET
+	#define RSTN_PIN			(GPIO_Pin_1)
+	#define RSTN_PORT			(GPIOA)
+
+	// Multi-functional pin
+	#define SLP_TR_PIN			(GPIO_Pin_8)
+	#define SLP_TR_PORT			(GPIOB)
+
+	// Mapping IRQ to ISR
+	#define EXTI_IRQ_LINE		(EXTI_Line3)
+	#define EXTI_IRQ_PORT		(GPIO_PortSourceGPIOA)
+	#define EXTI_IRQ_PIN		(GPIO_PinSource3)
+	#define EXTI_IRQ_CHANNEL	(EXTI3_IRQn)
+
+
+#else
+	#warning "No predefined board was selected!"
+	#error "No pins have been defined for AT86RF2xx radio!"
+#endif
 
 typedef union {
 	struct {
@@ -54,47 +156,16 @@ typedef union {
 } rf2xx_irq_t;
 
 
+void regWrite(uint8_t addr, uint8_t value);
 uint8_t regRead(uint8_t addr);
+
+void bitWrite(uint8_t addr, uint8_t mask, uint8_t offset, uint8_t value);
 uint8_t bitRead(uint8_t addr, uint8_t mask, uint8_t offset);
 
-void regWrite(uint8_t addr, uint8_t value);
-void bitWrite(uint8_t addr, uint8_t mask, uint8_t offset, uint8_t value);
+void frameWrite(const void* payload, uint8_t payload_len);
+uint8_t frameRead(void *payload);
 
 
-/*
-	Gather radio metrics
-*/
+int test(uint32_t sec);
 
-enum {
-	rxDetected,
-	rxAddrMatch,
-	rxSuccess,
-	rxToStack,
-
-	txCount,
-	txSuccess,
-	txCollision,
-	txNoAck,
-
-	spiError,
-
-	RF2XX_STATS_COUNT
-};
-
-#if RF2XX_CONF_STATS
-	extern uint32_t rf2xxStats[RF2XX_STATS_COUNT];
-	#define RF2XX_STATS_ADD(x)		do { if (RF2XX_CONF_STATS) rf2xxStats[x]++; } while(0)
-	#define RF2XX_STATS_GET(x)		((RF2XX_CONF_STATS) ? (rf2xxStats[x]) : 0)
-	#define RF2XX_STATS_RESET()		do { if (RF2XX_CONF_STATS) memset(rf2xxStats, 0, sizeof(rf2xxStats[0]) * RF2XX_STATS_COUNT); } while(0)
-#else
-	#define RF2XX_STATS_ADD(x)
-	#define RF2XX_STATS_GET(x)
-	#define RF2XX_STATS_RESET()
-
-#endif // RF2XX_DEBUG
-
-
-
-
-
-#endif // RF2XX_HAL_H_
+#endif

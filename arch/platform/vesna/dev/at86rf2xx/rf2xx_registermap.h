@@ -1,7 +1,6 @@
 #ifndef RF2XX_REGISTERMAP_H_
 #define RF2XX_REGISTERMAP_H_
 
-#include <stdint.h>
 
 #define RG_NOOP				(0x00)
 
