@@ -660,6 +660,8 @@ static int transmit(unsigned short transmit_len) {
     regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
     RTIMER_BUSYWAIT(US_TO_RTIMERTICKS(time.FORCE_TRX_OFF));
 
+	flags.value = 0;
+
     // Migrate to Tx mode
     regWrite(RG_TRX_STATE, opts.pollMode ? TRX_CMD_PLL_ON : TRX_CMD_TX_ARET_ON);
 
