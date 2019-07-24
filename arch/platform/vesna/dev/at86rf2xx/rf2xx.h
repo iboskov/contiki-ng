@@ -10,8 +10,8 @@
 #endif
 
 
-#ifdef RF2XX_CONF_STATS
-#define RF2XX_CONF_STATS            (0)
+#ifndef RF2XX_CONF_STATS
+#define RF2XX_CONF_STATS            (1)
 #endif
 
 /* Number of CSMA retries 0-5, 6 = reserved, 7 = immediately without CSMA/CA */
@@ -24,11 +24,6 @@
 #define RF2XX_CONF_MAX_FRAME_RETRIES    (15)
 #endif /* RF2XX_CONF_FRAME_RETRIES */
 
-/* Enable/disable radio's auto-acknowledge capability */
-#ifndef RF2XX_CONF_AUTOACK
-#define RF2XX_CONF_AUTOACK			    (1)
-#endif /* RF2XX_CONF_AUTOACK */
-
 // Shall CRC16-CITT checksum be offload to the radio?
 #ifndef RF2XX_CONF_CHECKSUM
 #define RF2XX_CONF_CHECKSUM		        (1)
@@ -39,10 +34,51 @@
 // AT86RF2xx driver for Contiki(-NG)
 extern const struct radio_driver rf2xx_driver;
 
+// Radio driver API
+int rf2xx_init(void);
+
+void rf2xx_reset(void);
+
+int rf2xx_prepare(const void *payload, unsigned short payload_len);
+int rf2xx_transmit(unsigned short payload_len);
+int rf2xx_send(const void *payload, unsigned short payload_len);
+int rf2xx_read(void *buf, unsigned short buf_len);
+int rf2xx_cca(void);
+int rf2xx_receiving_packet(void);
+int rf2xx_pending_packet(void);
+int rf2xx_on(void);
+int rf2xx_off(void);
+
 // Interrupt routine function
 void rf2xx_isr(void);
 
 
+
+
+enum {
+	rxDetected,
+	rxAddrMatch,
+	rxSuccess,
+	rxToStack,
+
+	txCount,
+	txSuccess,
+	txCollision,
+	txNoAck,
+
+	spiError,
+
+	RF2XX_STATS_COUNT
+};
+
+
+#if RF2XX_CONF_STATS
+extern volatile uint32_t rf2xxStats[RF2XX_STATS_COUNT];
+#endif
+
+#define RF2XX_STATS_ADD(event) do {if (RF2XX_CONF_STATS) rf2xxStats[event]++;} while(0)
+#define RF2XX_STATS_GET(event) do {(RF2XX_CONF_STATS) ? (rf2xxStats[event]) : 0} while(0)
+#define RF2XX_STATS_RESET()    do {if (RF2XX_CONF_STATS) memset(rf2xxStats, 0, sizeof(rf2xxStats[0]) * RF2XX_STATS_COUNT);} while(0)
 
 
 #endif
