@@ -14,12 +14,10 @@
 #include "stm32f10x_exti.h"
 #include "stm32f10x_gpio.h"
 #include "vsnspi_new.h"
-//#include "vsntime.h"
 
-
-#include "rf2xx/rf2xx_registermap.h"
-#include "rf2xx/rf2xx.h"
-#include "rf2xx/rf2xx_hal.h"
+#include "rf2xx_registermap.h"
+#include "rf2xx.h"
+#include "rf2xx_hal.h"
 
 
 #define LOG_MODULE "rf2xx"
@@ -73,7 +71,7 @@ volatile int8_t rf2xx_last_rssi;
 
 volatile static rtimer_clock_t last_packet_timestamp;
 
-static uint8_t txBuffer[2 + RF2XX_MAX_FRAME_SIZE];
+static uint8_t txBuffer[RF2XX_MAX_FRAME_SIZE];
 
 
 // SPI struct (from VESNA drivers) and constant (immutable) pointer to it.
@@ -635,9 +633,7 @@ static int prepare(const void *payload, unsigned short payload_len) {
         return RADIO_TX_ERR;
     }
 
-	txBuffer[0] = CMD_FB | CMD_WRITE;
-	txBuffer[1] = payload_len + RF2XX_CRC_SIZE; // CRC is always part of 802.15.4 frame
-	memcpy(txBuffer+2, payload, payload_len);
+	memcpy(txBuffer, payload, payload_len);
 
     #if !RF2XX_CONF_CHECKSUM
     {
@@ -671,10 +667,7 @@ static int transmit(unsigned short transmit_len) {
         US_TO_RTIMERTICKS(time.TRX_OFF_TO_PLL_ON)
     );
 
-    // If CRC is not offloaded to a radio, add precomputed CRC
-    #if !RF2XX_CONF_CHECKSUM
-    transmit_len += RF2XX_CRC_SIZE;
-    #endif
+	flags.PLL_LOCK = 1;
 
     setCS();
 
@@ -686,8 +679,24 @@ static int transmit(unsigned short transmit_len) {
 	setSLPTR();
 	clearSLPTR();
 
-	// length is a command byte + size byte + payload size byte
-	status = vsnSPI_transferDataTX(rf2xxSPI, txBuffer, 2 + transmit_len, spiCallback);
+	// Send framebuffer write command
+	status |= vsnSPI_pullByteTXRX(rf2xxSPI, (CMD_FB | CMD_WRITE), &dummy);
+
+	// inform radio how many bytes will frame contain
+	status |= vsnSPI_pullByteTXRX(rf2xxSPI, transmit_len + RF2XX_CRC_SIZE, &dummy);
+
+
+	// When CRC is offloaded to the radio, we don't need to copy CRC bytes
+	#if !RF2XX_CONF_CHECKSUM
+	transmit_len += RF2XX_CRC_SIZE;
+	#endif
+
+	// Copy frame to the radio buffer. Radio is already transmitting data
+	for (uint8_t i = 0; i < transmit_len; i++) {
+		status |= vsnSPI_pullByteTXRX(rf2xxSPI, txBuffer[i], &dummy);
+	}
+
+	clearCS();
 
     // We expect SPI to work in polling mode (since interrupts are disabled, because of 6TISCH)
     if (VSN_SPI_SUCCESS != status) {
@@ -696,9 +705,12 @@ static int transmit(unsigned short transmit_len) {
 
     // wait for transmit to complete
     RTIMER_BUSYWAIT_UNTIL(
-        getIRQs().IRQ3_TRX_END, // TODO: Add non-polling mode
-        US_TO_RTIMERTICKS(RADIO_BYTE_AIR_TIME * transmit_len)
+        opts.pollMode ? !getIRQs().IRQ3_TRX_END : !flags.TRX_END,
+        US_TO_RTIMERTICKS(RADIO_BYTE_AIR_TIME * 127) // Max transmit time
     );
+
+	// Manually set flag, when timeout reached or pollMode
+	flags.TRX_END = 1;
 
     ENERGEST_OFF(ENERGEST_TYPE_TRANSMIT);
 
@@ -745,7 +757,7 @@ static int read(void *buf, unsigned short buf_len) {
     status = vsnSPI_pullByteTXRX(rf2xxSPI, (CMD_FB | CMD_READ), &dummy); // command byte
     status = vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, &payload_len); // length byte
 
-    if (payload_len >= 3 && payload_len <= 127) {
+    if (payload_len < 3 && payload_len > 127) {
         // payload_len is not within valid range
         clearCS();
         return 0;

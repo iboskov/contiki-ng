@@ -162,10 +162,4 @@ uint8_t regRead(uint8_t addr);
 void bitWrite(uint8_t addr, uint8_t mask, uint8_t offset, uint8_t value);
 uint8_t bitRead(uint8_t addr, uint8_t mask, uint8_t offset);
 
-void frameWrite(const void* payload, uint8_t payload_len);
-uint8_t frameRead(void *payload);
-
-
-int test(uint32_t sec);
-
 #endif
