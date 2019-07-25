@@ -37,7 +37,7 @@ extern const struct radio_driver rf2xx_driver;
 // Radio driver API
 int rf2xx_init(void);
 
-void rf2xx_reset(void);
+int rf2xx_reset(void);
 
 int rf2xx_prepare(const void *payload, unsigned short payload_len);
 int rf2xx_transmit(unsigned short payload_len);
@@ -77,7 +77,7 @@ extern volatile uint32_t rf2xxStats[RF2XX_STATS_COUNT];
 #endif
 
 #define RF2XX_STATS_ADD(event) do {if (RF2XX_CONF_STATS) rf2xxStats[event]++;} while(0)
-#define RF2XX_STATS_GET(event) do {(RF2XX_CONF_STATS) ? (rf2xxStats[event]) : 0} while(0)
+#define RF2XX_STATS_GET(event) ((RF2XX_CONF_STATS) ? (rf2xxStats[event]) : 0)
 #define RF2XX_STATS_RESET()    do {if (RF2XX_CONF_STATS) memset(rf2xxStats, 0, sizeof(rf2xxStats[0]) * RF2XX_STATS_COUNT);} while(0)
 
 

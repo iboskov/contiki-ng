@@ -135,30 +135,37 @@ static uint8_t chip = RF2XX_UNDEFINED;
 
 
 
-static int on(void);
-static int off(void);
-static uint8_t getChannel(void);
-static float getFrequency(void);
-
 
 
 PROCESS(rf2xx_process, "AT86RF2xx driver");
+PROCESS(rf2xx_stats_process, "AT86RF2xx driver");
 //PROCESS(rf2xx_calibration_process, "AT86RF2xx calibration");
 
 
-inline static int8_t getRSSI(void) {
+inline static int8_t
+getRSSI(void)
+{
     int8_t value = bitRead(SR_ED_LEVEL);
     if (value >= 0x00 && value <= 0x54) return value - 91;
     return 0;
 }
 
-inline static rf2xx_irq_t getIRQs(void) {
+inline static rf2xx_irq_t
+getIRQs(void)
+{
 	rf2xx_irq_t irq;
-    setCS();
-    vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, &irq.value);
-    clearCS();
 
-    return irq;
+	if (opts.pollMode) {
+		setCS();
+		vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, &irq.value);
+		clearCS();
+
+		return irq;
+	}
+
+	irq.value = regRead(RG_IRQ_STATUS);
+	return irq;
+
 }
 
 
@@ -185,7 +192,9 @@ spiErrorCallback(void *cbDevStruct)
 }
 
 
-void setChannel(uint8_t ch) {
+void
+setChannel(uint8_t ch)
+{
 	switch (chip) {
 		case RF2XX_AT86RF233:
 		//case RF2XX_AT86RF232:
@@ -207,11 +216,15 @@ void setChannel(uint8_t ch) {
 	//LOG_INFO("Channel=%u Freq=%.2fMHz\n", getChannel(), getFrequency());
 }
 
-uint8_t getChannel(void) {
+uint8_t
+getChannel(void)
+{
 	return bitRead(SR_CHANNEL);
 }
 
-void setTxPower(uint8_t pwr) {
+void
+setTxPower(uint8_t pwr)
+{
 	switch (chip) {
 		case RF2XX_AT86RF212:
 			bitWrite(SR_TX_PWR_RF21x_ALL, pwr);
@@ -226,7 +239,9 @@ void setTxPower(uint8_t pwr) {
 	}
 }
 
-uint8_t getTxPower(void) {
+uint8_t
+getTxPower(void)
+{
 	switch (chip) {
 		case RF2XX_AT86RF212:
 			return bitRead(SR_TX_PWR_RF21x_ALL);
@@ -239,32 +254,42 @@ uint8_t getTxPower(void) {
 	}
 }
 
-void setPanID(uint16_t pan) {
+void
+setPanID(uint16_t pan)
+{
 	regWrite(RG_PAN_ID_0, pan & 0xFF);
 	regWrite(RG_PAN_ID_1, pan >> 8);
 	LOG_INFO("PAN == 0x%02x\n", pan);
 }
 
 
-uint16_t getPanID(void) {
+uint16_t
+getPanID(void)
+{
 	uint16_t pan = ((uint16_t)regRead(RG_PAN_ID_1) << 8) & 0xFF00;
     pan |= (uint16_t)regRead(RG_PAN_ID_0) & 0xFF;
     return pan;
 }
 
-uint16_t getShortAddr(void) {
+uint16_t
+getShortAddr(void)
+{
 	uint16_t addr = ((uint16_t)regRead(RG_SHORT_ADDR_1) << 8) & 0xFF00;
     addr |= (uint16_t)regRead(RG_SHORT_ADDR_0) & 0xFF;
     return addr;
 }
 
-void setShortAddr(uint16_t addr) {
+void
+setShortAddr(uint16_t addr)
+{
 	regWrite(RG_SHORT_ADDR_0, addr & 0xFF);
 	regWrite(RG_SHORT_ADDR_1, addr >> 8);
 	LOG_INFO("Short addr == 0x%02x\n", addr);
 }
 
-void setLongAddr(const uint8_t * addr, uint8_t len) {
+void
+setLongAddr(const uint8_t * addr, uint8_t len)
+{
     if (len > 8) len = 8;
 
     // The usual representation of MAC address has big-endianess. However,
@@ -277,7 +302,9 @@ void setLongAddr(const uint8_t * addr, uint8_t len) {
 }
 
 
-void getLongAddr(uint8_t *addr, uint8_t len) {
+void
+getLongAddr(uint8_t *addr, uint8_t len)
+{
 	if (len > 8) len = 8;
     for (uint8_t i = 0; i < len; i++) {
         addr[i] = regRead(RG_IEEE_ADDR_7 - i);
@@ -286,7 +313,9 @@ void getLongAddr(uint8_t *addr, uint8_t len) {
 
 
 
-static float getFrequency(void) {
+static float
+getFrequency(void)
+{
 	uint8_t channel = bitRead(SR_CHANNEL);
 
 	switch (chip) {
@@ -331,7 +360,9 @@ static float getFrequency(void) {
 }
 
 
-uint8_t getMaxChannel(void) {
+uint8_t
+getMaxChannel(void)
+{
 	switch (chip) {
 		case RF2XX_AT86RF233:
 		case RF2XX_AT86RF231:
@@ -344,7 +375,9 @@ uint8_t getMaxChannel(void) {
 	}
 }
 
-uint8_t getMinChannel(void) {
+uint8_t
+getMinChannel(void)
+{
 	switch (chip) {
 		case RF2XX_AT86RF233:
 		case RF2XX_AT86RF231:
@@ -357,7 +390,9 @@ uint8_t getMinChannel(void) {
 	}
 }
 
-uint8_t getMaxPwr(void) {
+uint8_t
+getMaxPwr(void)
+{
 	// Get hex value to set it on radio
 	switch (chip) {
 		case RF2XX_AT86RF233:
@@ -372,7 +407,9 @@ uint8_t getMaxPwr(void) {
 }
 
 // TODO: Still don't know how to do it for RF212
-uint8_t getMinPwr(void) {
+uint8_t
+getMinPwr(void)
+{
 	// Get hex value to set it on radio
 	switch (chip) {
 		case RF2XX_AT86RF233:
@@ -386,11 +423,15 @@ uint8_t getMinPwr(void) {
 	}
 }
 
-inline static int8_t getCcaThreshold(void) {
+inline static int8_t
+getCcaThreshold(void)
+{
     return -91 + 2 * bitRead(SR_CCA_ED_THRES);
 }
 
-inline static void setCcaThreshold(int8_t threshold) {
+inline static void
+setCcaThreshold(int8_t threshold)
+{
 	LOG_INFO("CCA-threshod=%u\n", threshold);
     bitWrite(SR_CCA_ED_THRES, threshold / 2 + 91);
 }
@@ -400,7 +441,9 @@ inline static void setCcaThreshold(int8_t threshold) {
 
 
 
-void reset(void) {
+int
+rf2xx_reset(void)
+{
     uint8_t dummy __attribute__((unused));
     uint8_t partNum;
 
@@ -511,8 +554,8 @@ void reset(void) {
 
 	// Configure Promiscuous mode; Incomplete
 	//bitWrite(SR_AACK_PROM_MODE, RF2XX_CONF_PROMISCUOUS);
-	//bitWrite(SR_AACK_UPLD_RES_FT, 1);
-	//bitWrite(SR_AACK_FLTR_RES_FT, 1);
+	bitWrite(SR_AACK_UPLD_RES_FT, 1);
+	bitWrite(SR_AACK_FLTR_RES_FT, 1);
 
 	// Enable only specific IRQs
 	regWrite(RG_IRQ_MASK, DEFAULT_IRQ_MASK);
@@ -532,11 +575,15 @@ void reset(void) {
     rf2xx_last_lqi = 0;
     rf2xx_last_rssi = 0;
 	last_packet_timestamp = 0;
+
+	RF2XX_STATS_RESET();
+
+	return 1;
 }
 
 
 int
-init(void)
+rf2xx_init(void)
 {
 	// If AT86RF2xx radio is on SNR board
 	#if AT86RF2XX_BOARD_SNR
@@ -621,20 +668,23 @@ init(void)
     EXTI_Init(rf2xxEXTI);
 
     // Reset internal and hardware states
-	reset();
+	rf2xx_reset();
 
 	// Start Contiki process which will take care of received packets
 	process_start(&rf2xx_process, NULL);
+	process_start(&rf2xx_stats_process, NULL);
 	// process_start(&rf2xx_calibration_process, NULL);
 
 	return 1;
 }
 
 
-static int prepare(const void *payload, unsigned short payload_len) {
-    
+int
+rf2xx_prepare(const void *payload, unsigned short payload_len)
+{
     // Verify that payload is not bigger than radio's buffer
     if (payload_len > RF2XX_MAX_PAYLOAD_SIZE) {
+		LOG_ERR("Payload larger than radio buffer: %u > %u\n", payload_len, RF2XX_MAX_PAYLOAD_SIZE);
         return RADIO_TX_ERR;
     }
 
@@ -652,11 +702,14 @@ static int prepare(const void *payload, unsigned short payload_len) {
 }
 
 
-static int transmit(unsigned short transmit_len) {
+int
+rf2xx_transmit(unsigned short transmit_len)
+{
 	vsnSPI_ErrorStatus status = VSN_SPI_SUCCESS;
     vsnTime_Timeout timeout;
     uint8_t dummy __attribute__((unused));
     uint8_t trac;
+	rf2xx_irq_t irq;
 
 	// CRC has to be added to the length
 	transmit_len += RF2XX_CRC_SIZE;
@@ -665,12 +718,14 @@ static int transmit(unsigned short transmit_len) {
     regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
     RTIMER_BUSYWAIT(US_TO_RTIMERTICKS(time.FORCE_TRX_OFF));
 
-	LOG_DBG("TRX_OFF\n");
+	LOG_DBG("OFF\n");
 
 	flags.value = 0;
 
     // Migrate to Tx mode
     regWrite(RG_TRX_STATE, (opts.pollMode || !opts.autoCCA) ? TRX_CMD_PLL_ON : TRX_CMD_TX_ARET_ON);
+
+	if (opts.pollMode || !opts.autoCCA) LOG_DBG("PLL_ON\n"); else LOG_DBG("TX_ARET_ON\n");
 
 
     // Wait Tx mode to be reached
@@ -681,8 +736,6 @@ static int transmit(unsigned short transmit_len) {
 
 	flags.PLL_LOCK = 1;
 
-	LOG_DBG("Tx mode\n");
-
 
     setCS();
 
@@ -691,11 +744,17 @@ static int transmit(unsigned short transmit_len) {
 	// Trigger transmit (see Manual p. 127, bottom)
     // The radio will start Tx, first byte needs to be written within 16us
     // (at default PA_BUF_LT and PA_LT)
-	setSLPTR();
-	clearSLPTR();
+	//setSLPTR();
+	//clearSLPTR();
 
 	// Send framebuffer write command
-	status |= vsnSPI_pullByteTXRX(rf2xxSPI, (CMD_FB | CMD_WRITE), &dummy);
+	status |= vsnSPI_pullByteTXRX(rf2xxSPI, (CMD_FB | CMD_WRITE), &irq.value);
+
+	if (irq.IRQ6_TRX_UR) {
+		clearCS();
+		LOG_ERR("Frame buffer access violation\n");
+		return RADIO_TX_ERR;
+	}
 
 	// inform radio how many bytes will frame contain
 	status |= vsnSPI_pullByteTXRX(rf2xxSPI, transmit_len, &dummy);
@@ -714,6 +773,11 @@ static int transmit(unsigned short transmit_len) {
 
 	clearCS();
 
+	getIRQs();
+
+	setSLPTR();
+	clearSLPTR();
+
 	LOG_DBG("%u bytes sent\n", transmit_len);
 
     // We expect SPI to work in polling mode (since interrupts are disabled, because of 6TISCH)
@@ -731,8 +795,6 @@ static int transmit(unsigned short transmit_len) {
         US_TO_RTIMERTICKS(4096) // Max transmit time
     );
 
-	//while (opts.pollMode ? !getIRQs().IRQ3_TRX_END : !flags.TRX_END);
-
 	// Manually set flag, when timeout reached or pollMode
 	flags.TRX_END = 1;
 
@@ -740,7 +802,7 @@ static int transmit(unsigned short transmit_len) {
 
     trac = (opts.pollMode || !opts.autoCCA) ? TRAC_SUCCESS : bitRead(SR_TRAC_STATUS);
 
-    on(); // Go back to Rx mode
+    rf2xx_on(); // Go back to Rx mode
 
 	switch (trac) {
         case TRAC_SUCCESS:
@@ -765,21 +827,35 @@ static int transmit(unsigned short transmit_len) {
 }
 
 
-static int send(const void *payload, unsigned short payload_len) {
-	prepare(payload, payload_len);
-	return transmit(payload_len);
+int
+rf2xx_send(const void *payload, unsigned short payload_len)
+{
+	rf2xx_prepare(payload, payload_len);
+	return rf2xx_transmit(payload_len);
 }
 
 
-static int read(void *buf, unsigned short buf_len) {
+int
+rf2xx_read(void *buf, unsigned short buf_len)
+{
     vsnSPI_ErrorStatus status;
     uint8_t payload_len;
     uint8_t trac;
     uint8_t dummy __attribute__((unused));
     uint16_t crc;
+	rf2xx_irq_t irq;
+
+	flags.TRX_END = 0;
 
     setCS();
-    status = vsnSPI_pullByteTXRX(rf2xxSPI, (CMD_FB | CMD_READ), &dummy); // command byte
+    status = vsnSPI_pullByteTXRX(rf2xxSPI, (CMD_FB | CMD_READ), &irq.value); // command byte
+
+	if (irq.IRQ6_TRX_UR) {
+		clearCS();
+		LOG_ERR("FrameBuffer access violation\n");
+		return 0;
+	}
+
     status = vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, &payload_len); // length byte
 
     if (payload_len < 3 || payload_len > 127) {
@@ -789,10 +865,10 @@ static int read(void *buf, unsigned short buf_len) {
         return 0;
     }
 
+	LOG_DBG("Got %u bytes\n", payload_len);
+
     // CRC is always part of IEEE 802.15.4 frame
     payload_len -= RF2XX_CRC_SIZE;
-
-	LOG_DBG("Got %u bytes\n", payload_len);
 
     // Check if content will fit into buffer
     if (payload_len > buf_len) {
@@ -803,7 +879,7 @@ static int read(void *buf, unsigned short buf_len) {
 
     // Transfer payload
     for (uint8_t i = 0; i < payload_len; i++) {
-		if (VSN_SPI_COM_IN_PROGRESS & status) LOG_ERR("SPI in progress\n");
+		//if (VSN_SPI_COM_IN_PROGRESS & status) LOG_ERR("SPI in progress\n");
         status = vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, buf + i);
     }
 
@@ -835,6 +911,8 @@ static int read(void *buf, unsigned short buf_len) {
 
         packetbuf_set_attr(PACKETBUF_ATTR_LINK_QUALITY, rf2xx_last_lqi);
     	packetbuf_set_attr(PACKETBUF_ATTR_RSSI, rf2xx_last_rssi);
+
+		LOG_DBG("RSSI=%idBm LQI=%u\n", rf2xx_last_rssi, rf2xx_last_lqi);
     }
 
     
@@ -844,19 +922,19 @@ static int read(void *buf, unsigned short buf_len) {
     switch (trac) {
 		case TRAC_SUCCESS:
 			// Everything is OK. CRC matches.
-			LOG_DBG("TRAC=OK (%u)\n", trac);
+			LOG_DBG("TRAC=OK\n");
 			break;
 
 		case TRAC_SUCCESS_WAIT_FOR_ACK:
 			// TODO: How do we inform CONTIKI about NO-ACK?
-			LOG_DBG("TRAC=NO-ACK (%u)\n", trac);
+			LOG_DBG("TRAC=NO-ACK\n");
 			break;
 
 		case TRAC_INVALID:
 			// Something went wrong with frame.
 			// Read too fast? Buffer issues?
 			// There is a change that frame is corrupted. No sense to read LQI.
-			LOG_DBG("TRAC=INVALID (%u)\n", trac);
+			LOG_DBG("TRAC=INVALID\n");
 			return 0;
 
 		default:
@@ -872,7 +950,9 @@ static int read(void *buf, unsigned short buf_len) {
 
 
 
-static int cca(void) {
+int
+rf2xx_channel_clear(void)
+{
     // return 1 for IDLE, 0 for BUSY channel
 
     if (opts.autoCCA) return 1; // extended mode does CCA on its own.
@@ -880,6 +960,8 @@ static int cca(void) {
 
     regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
     RTIMER_BUSYWAIT(US_TO_RTIMERTICKS(time.FORCE_TRX_OFF));
+
+	flags.value = 0;
 
 	bitWrite(SR_RX_PDT_DIS, 1); // disable reception
 	regWrite(RG_TRX_STATE, TRX_CMD_PLL_ON);
@@ -896,25 +978,43 @@ static int cca(void) {
 
     bitWrite(SR_RX_PDT_DIS, 0); // enable reception in RX mode;
 
-    on();
+    rf2xx_on();
 
     return cca;
 }
 
 
-static int receiving_packet(void) {
-    if (opts.pollMode) return getIRQs().IRQ2_RX_START;
+int
+rf2xx_receiving_packet(void)
+{
+	if (opts.pollMode) {
+		uint8_t state = bitRead(SR_TRX_STATUS);
+		if (TRX_STATUS_BUSY_RX == state ||
+			TRX_STATUS_BUSY_RX_AACK == state ||
+			TRX_STATUS_BUSY_RX_AACK_NOCLK == state)
+		{
+			return 1;
+		}
 
-    return flags.RX_START && !flags.TRX_END;
+		return 0;
+	}
+	
+	return flags.RX_START && !flags.TRX_END;
 }
 
-static int pending_packet(void) {
-    if (opts.pollMode) return getIRQs().IRQ3_TRX_END;
+int
+rf2xx_pending_packet(void)
+{
+	if (opts.pollMode) {
+		return getIRQs().IRQ3_TRX_END;
+	}
 
-    return flags.TRX_END; // this was set in interrupt
+	return flags.TRX_END;
 }
 
-static int on(void) {
+int
+rf2xx_on(void)
+{
     uint8_t dummy __attribute__((unused));
 
 
@@ -924,7 +1024,8 @@ static int on(void) {
     flags.value = 0;
 
     regWrite(RG_TRX_STATE, opts.autoACK ? TRX_CMD_RX_AACK_ON : TRX_CMD_RX_ON);
-	LOG_DBG("On\n");
+
+	if (opts.autoACK) LOG_DBG("RX_AACK_ON\n"); else LOG_DBG("RX_ON\n");
 
 	RTIMER_BUSYWAIT_UNTIL(
 		opts.pollMode ? getIRQs().IRQ0_PLL_LOCK : flags.PLL_LOCK,
@@ -939,10 +1040,14 @@ static int on(void) {
 }
 
 
-static int off(void) {
+int
+rf2xx_off(void)
+{
     regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
     RTIMER_BUSYWAIT(US_TO_RTIMERTICKS(time.FORCE_TRX_OFF));
 	LOG_DBG("Off\n");
+
+	flags.value = 0;
 
     ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
 
@@ -950,7 +1055,9 @@ static int off(void) {
 }
 
 
-void rf2xx_isr(void) {
+void
+rf2xx_isr(void)
+{
 	ENERGEST_ON(ENERGEST_TYPE_IRQ);
 
 	volatile rf2xx_irq_t irq;
@@ -979,7 +1086,7 @@ void rf2xx_isr(void) {
 
 	if (irq.IRQ5_AMI) {
 		flags.AMI = 1;
-		//RF2XX_STATS_ADD(rxAddrMatch);
+		RF2XX_STATS_ADD(rxAddrMatch);
 	}
 
 	if (irq.IRQ6_TRX_UR) {
@@ -997,7 +1104,7 @@ void rf2xx_isr(void) {
 
 		if (flags.RX_START) {
 			last_packet_timestamp = RTIMER_NOW();
-			//RF2XX_STATS_ADD(rxSuccess);
+			RF2XX_STATS_ADD(rxSuccess);
 
 			// inform process about packet
 			process_poll(&rf2xx_process);
@@ -1032,7 +1139,7 @@ PROCESS_THREAD(rf2xx_process, ev, data)
 
 		packetbuf_clear();
 		packetbuf_set_attr(PACKETBUF_ATTR_TIMESTAMP, last_packet_timestamp);
-		len = read(packetbuf_dataptr(), PACKETBUF_SIZE);
+		len = rf2xx_read(packetbuf_dataptr(), PACKETBUF_SIZE);
 
 		packetbuf_set_datalen(len);
 
@@ -1043,10 +1150,42 @@ PROCESS_THREAD(rf2xx_process, ev, data)
 }
 
 
+PROCESS_THREAD(rf2xx_stats_process, ev, data)
+{
+	static struct etimer et;
+	PROCESS_BEGIN();
+
+	etimer_set(&et, CLOCK_SECOND);
+
+	LOG_INFO("AT86RF2xx stats process started!\n");
+
+	while(1) {
+		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+
+		LOG_INFO("Stats:");
+		LOG_INFO_(" rxDetected: %u", RF2XX_STATS_GET(rxDetected));
+		LOG_INFO_(" rxAddrMatch: %u", RF2XX_STATS_GET(rxAddrMatch));
+		LOG_INFO_(" rxSuccess: %u", RF2XX_STATS_GET(rxSuccess));
+		LOG_INFO_(" rxToStack: %u", RF2XX_STATS_GET(rxToStack));
+		LOG_INFO_(" txCount: %u", RF2XX_STATS_GET(txCount));
+		LOG_INFO_(" txSuccess: %u", RF2XX_STATS_GET(txSuccess));
+		LOG_INFO_(" txCollision: %u", RF2XX_STATS_GET(txCollision));
+		LOG_INFO_(" txNoAck: %u", RF2XX_STATS_GET(txNoAck));
+		LOG_INFO_(" spiError: %u\n", RF2XX_STATS_GET(spiError));
+
+
+		etimer_reset(&et);
+	}
+
+	PROCESS_END();
+}
+
+
 
 
 static radio_result_t
-get_value(radio_param_t param, radio_value_t *value) {
+get_value(radio_param_t param, radio_value_t *value)
+{
 	if (!value) return RADIO_RESULT_INVALID_VALUE;
 
 	switch (param) {
@@ -1137,16 +1276,19 @@ get_value(radio_param_t param, radio_value_t *value) {
 
 
 static radio_result_t
-set_value(radio_param_t param, radio_value_t value) {
+set_value(radio_param_t param, radio_value_t value)
+{
 	switch (param) {
 	case RADIO_PARAM_POWER_MODE:
 		switch (value) {
 			case RADIO_POWER_MODE_ON:
-				on();
+				rf2xx_on();
 				return RADIO_RESULT_OK;
+
 			case RADIO_POWER_MODE_OFF:
-				off();
+				rf2xx_off();
 				return RADIO_RESULT_OK;
+
 			default:
 				return RADIO_RESULT_INVALID_VALUE;
 		}
@@ -1184,7 +1326,7 @@ set_value(radio_param_t param, radio_value_t value) {
 	case RADIO_PARAM_TX_MODE:
 		opts.autoCCA = !!(value & RADIO_TX_MODE_SEND_ON_CCA);
 		// Disable automatic CCA when MAX_CSMA_RETRIES = 7
-		bitWrite(SR_MAX_CSMA_RETRIES, opts.autoCCA ? 7 : RF2XX_CONF_MAX_CSMA_RETRIES);
+		bitWrite(SR_MAX_CSMA_RETRIES, opts.autoCCA ? RF2XX_CONF_MAX_CSMA_RETRIES : 7);
 		return RADIO_RESULT_OK;
 
 	case RADIO_PARAM_TXPOWER:
@@ -1209,7 +1351,9 @@ set_value(radio_param_t param, radio_value_t value) {
 }
 
 
-static radio_result_t get_object(radio_param_t param, void *dest, size_t size) {
+static radio_result_t
+get_object(radio_param_t param, void *dest, size_t size)
+{
 	if (dest == NULL) return RADIO_RESULT_ERROR;
 
 	switch (param) {
@@ -1233,7 +1377,9 @@ static radio_result_t get_object(radio_param_t param, void *dest, size_t size) {
 }
 
 
-static radio_result_t set_object(radio_param_t param, const void *src, size_t size) {
+static radio_result_t
+set_object(radio_param_t param, const void *src, size_t size)
+{
 	if (src == NULL) return RADIO_RESULT_ERROR;
 	switch (param) {
 		case RADIO_PARAM_64BIT_ADDR:
@@ -1247,20 +1393,20 @@ static radio_result_t set_object(radio_param_t param, const void *src, size_t si
 
 
 const struct radio_driver rf2xx_driver = {
-	init,
-	prepare,
-	transmit,
-	send,
-	read,
-	cca,
-	receiving_packet,
-	pending_packet,
-	on,
-	off,
-	get_value,
-	set_value,
-	get_object,
-	set_object,
+	.init = rf2xx_init,
+	.prepare = rf2xx_prepare,
+	.transmit = rf2xx_transmit,
+	.send = rf2xx_send,
+	.read = rf2xx_read,
+	.channel_clear = rf2xx_channel_clear,
+	.receiving_packet = rf2xx_receiving_packet,
+	.pending_packet = rf2xx_pending_packet,
+	.on = rf2xx_on,
+	.off = rf2xx_off,
+	.get_value = get_value,
+	.set_value = set_value,
+	.get_object = get_object,
+	.set_object = set_object,
 };
 
 // CONTIKI
