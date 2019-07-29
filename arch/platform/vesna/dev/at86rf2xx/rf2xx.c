@@ -693,7 +693,7 @@ rf2xx_prepare(const void *payload, unsigned short payload_len)
     #if !RF2XX_CONF_CHECKSUM
     {
         uint16_t crc = crc16_data(payload, payload_len, 0x00);
-        memcpy(txBuffer+2+payload_len, &crc, RF2XX_CRC_SIZE); // copy CRC after actual data
+        memcpy(txBuffer+payload_len, &crc, RF2XX_CRC_SIZE); // copy CRC after actual data
 		LOG_DBG("[prepare] CRC\n");
     }
     #endif
