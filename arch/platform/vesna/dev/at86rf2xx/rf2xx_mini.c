@@ -75,8 +75,10 @@ PROCESS(rf2xx_process, "AT86RF2xx driver");
 #define DEFAULT_IRQ_MASK    (IRQ2_RX_START | IRQ3_TRX_END | IRQ4_CCA_ED_DONE | IRQ5_AMI)
 
 
+#if LOG_DBG_ENABLED
 // SRC: https://barrgroup.com/Embedded-Systems/How-To/Define-Assert-Macro
 #define ASSERT(expr) if (!(expr)) LOG_ERR("Err: " #expr "\n")
+#endif
 
 #define BUSYWAIT_UNTIL(expr) while(!(expr))
 
@@ -464,6 +466,10 @@ rf2xx_transmit(unsigned short transmit_len)
 
     flags.PLL_LOCK = 1;
 
+    // Trigger transmit
+    setSLPTR();
+    clearSLPTR();
+
     setCS();
 
     status |= vsnSPI_pullByteTXRX(rf2xxSPI, (CMD_FB | CMD_WRITE), &dummy); // write to FB
@@ -486,11 +492,7 @@ rf2xx_transmit(unsigned short transmit_len)
 
     ASSERT(VSN_SPI_SUCCESS == status);
 
-    LOG_DBG("%u bytes transmit\n", transmit_len + 2);
-
-    // Trigger transmit
-    setSLPTR();
-    clearSLPTR();
+    LOG_DBG("Sent %u bytes\n", transmit_len);
 
     // Wait to complete BUSY STATE
     BUSYWAIT_UNTIL(flags.TRX_END);
