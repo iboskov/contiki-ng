@@ -1071,7 +1071,9 @@ regRead(uint8_t addr)
 
 	setCS();
 	status = vsnSPI_pullByteTXRX(rf2xxSPI, ((addr & CMD_REG_MASK) | CMD_REG | CMD_READ), &value);
+    BUSYWAIT_UNTIL(vsnSPI_checkSPIstatus(rf2xxSPI) == VSN_SPI_SUCCESS);
 	status |= vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, &value);
+    BUSYWAIT_UNTIL(vsnSPI_checkSPIstatus(rf2xxSPI) == VSN_SPI_SUCCESS);
 	clearCS();
 
     ASSERT(VSN_SPI_SUCCESS == status);
@@ -1087,7 +1089,9 @@ regWrite(uint8_t addr, uint8_t value)
 
 	setCS();
 	status = vsnSPI_pullByteTXRX(rf2xxSPI, ((addr & CMD_REG_MASK) | CMD_REG | CMD_WRITE), &dummy);
+    BUSYWAIT_UNTIL(vsnSPI_checkSPIstatus(rf2xxSPI) == VSN_SPI_SUCCESS);
 	status |= vsnSPI_pullByteTXRX(rf2xxSPI, value, &dummy);
+    BUSYWAIT_UNTIL(vsnSPI_checkSPIstatus(rf2xxSPI) == VSN_SPI_SUCCESS);
 	clearCS();
 
     ASSERT(VSN_SPI_SUCCESS == status);
