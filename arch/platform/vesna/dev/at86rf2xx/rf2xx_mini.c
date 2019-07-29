@@ -552,9 +552,6 @@ int rf2xx_read(void *buf, unsigned short buf_len)
 
     //dummy = regRead(RG_IRQ_STATUS);
 
-    // TODO: Where do we need to actually read it.
-    rf2xx_last_rssi = bitRead(SR_ED_LEVEL) - 91;
-
     flags.TRX_END = 0;
     flags.RX_START = 0;
     flags.AMI = 0;
@@ -607,6 +604,8 @@ int rf2xx_read(void *buf, unsigned short buf_len)
 
     ASSERT(VSN_SPI_SUCCESS == status);
 
+    // RSSI of packet
+    rf2xx_last_rssi = bitRead(SR_ED_LEVEL) - 91;
 
     LOG_DBG("RSSI=%idBm LQI=%u\n", rf2xx_last_rssi, rf2xx_last_lqi);
 
@@ -876,7 +875,8 @@ get_value(radio_param_t param, radio_value_t *value)
 			return RSSI_BASE_VAL + 2 * (radio_value_t)bitRead(SR_CCA_ED_THRES);
 
 		case RADIO_PARAM_RSSI:
-			*value = (radio_value_t)rf2xx_last_rssi;
+            LOG_DBG("Request current RSSI\n");
+			*value = (radio_value_t)(3 * (bitRead(SR_RSSI) - 1) + RSSI_BASE_VAL);
 			return RADIO_RESULT_OK;
 
 		case RADIO_PARAM_LAST_LINK_QUALITY:
