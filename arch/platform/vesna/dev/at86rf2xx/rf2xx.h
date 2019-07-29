@@ -11,7 +11,7 @@
 
 
 #ifndef RF2XX_CONF_STATS
-#define RF2XX_CONF_STATS            (1)
+#define RF2XX_CONF_STATS            (0)
 #endif
 
 /* Number of CSMA retries 0-5, 6 = reserved, 7 = immediately without CSMA/CA */
@@ -66,19 +66,20 @@ enum {
 	txCollision,
 	txNoAck,
 
-	spiError,
-
 	RF2XX_STATS_COUNT
 };
 
 
 #if RF2XX_CONF_STATS
 extern volatile uint32_t rf2xxStats[RF2XX_STATS_COUNT];
+#define RF2XX_STATS_GET(event)		rf2xxStats[event]
+#define RF2XX_STATS_COUNT(event)	rf2xxStats[event]++
+#define RF2XX_STATS_RESET()    		memset(rf2xxStats, 0, sizeof(rf2xxStats[0]) * RF2XX_STATS_COUNT)
 #endif
 
-#define RF2XX_STATS_ADD(event) do {if (RF2XX_CONF_STATS) rf2xxStats[event]++;} while(0)
-#define RF2XX_STATS_GET(event) ((RF2XX_CONF_STATS) ? (rf2xxStats[event]) : 0)
-#define RF2XX_STATS_RESET()    do {if (RF2XX_CONF_STATS) memset(rf2xxStats, 0, sizeof(rf2xxStats[0]) * RF2XX_STATS_COUNT);} while(0)
+#define RF2XX_STATS_GET(event)		(0)
+#define RF2XX_STATS_COUNT(event)
+#define RF2XX_STATS_RESET()
 
 
 #endif

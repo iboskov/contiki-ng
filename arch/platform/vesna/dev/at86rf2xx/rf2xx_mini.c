@@ -74,6 +74,9 @@ PROCESS(rf2xx_process, "AT86RF2xx driver");
 
 #define DEFAULT_IRQ_MASK    (IRQ2_RX_START | IRQ3_TRX_END | IRQ4_CCA_ED_DONE | IRQ5_AMI)
 
+#if RF2XX_CONF_STATS
+volatile uint32_t rf2xxStats[RF2XX_STATS_COUNT] = { 0 };
+#endif
 
 #if LOG_DBG_ENABLED
 // SRC: https://barrgroup.com/Embedded-Systems/How-To/Define-Assert-Macro
@@ -487,24 +490,20 @@ rf2xx_transmit(unsigned short transmit_len)
     //clearSLPTR();
 
     // Wait to complete BUSY STATE
-    BUSYWAIT_UNTIL(flags.TRX_END); // TODO: Add check for TRX_END
-
-    flags.TRX_END = 0;
-    
-    ENERGEST_OFF(ENERGEST_TYPE_TRANSMIT);
-
 #if TX_ARET_MODE
+    BUSYWAIT_UNTIL(flags.TRX_END || TRX_STATUS_TX_ARET_ON == bitRead(SR_TRX_STATUS));
     ASSERT(TRX_STATUS_TX_ARET_ON == bitRead(SR_TRX_STATUS));
 
     // Read TRAC status 
     trac = bitRead(SR_TRAC_STATUS);
-
-    // TODO: Check TRAC status
 #else
+    BUSYWAIT_UNTIL(flags.TRX_END || TRX_STATUS_TX_ON == bitRead(SR_TRX_STATUS));
     ASSERT(TRX_STATUS_TX_ON == bitRead(SR_TRX_STATUS));
 #endif
 
-    ENERGEST_ON(ENERGEST_TYPE_LISTEN);
+    flags.TRX_END = 0;
+    
+    ENERGEST_OFF(ENERGEST_TYPE_TRANSMIT);
 
     // Migrate to RX mode
 #if RX_AACK_MODE
@@ -516,21 +515,24 @@ rf2xx_transmit(unsigned short transmit_len)
     BUSYWAIT_UNTIL(TRX_STATUS_RX_AACK_ON == bitRead(SR_TRX_STATUS));
     ASSERT(TRX_STATUS_RX_ON == bitRead(SR_TRX_STATUS));
 #endif
+
+    ENERGEST_ON(ENERGEST_TYPE_LISTEN);
+
     flags.PLL_LOCK = 1;
 
 	switch (trac) {
         case TRAC_SUCCESS:
-            RF2XX_STATS_ADD(txSuccess);
+            RF2XX_STATS_COUNT(txSuccess);
 			LOG_DBG("TRAC=OK\n");
             return RADIO_TX_OK;
 
         case TRAC_NO_ACK:
-            RF2XX_STATS_ADD(txNoAck);
+            RF2XX_STATS_COUNT(txNoAck);
             LOG_DBG("TRAC=NO-ACK\n");
             return RADIO_TX_NOACK;
 
         case TRAC_CHANNEL_ACCESS_FAILURE:
-            RF2XX_STATS_ADD(txCollision);
+            RF2XX_STATS_COUNT(txCollision);
             LOG_DBG("TRAC=collision\n");
             return RADIO_TX_COLLISION;
 
@@ -791,11 +793,12 @@ rf2xx_isr(void)
         flags.AMI = 0;
         flags.TRX_END = 0;
 
-        LOG_DBG("RX_START\n");
+        RF2XX_STATS_COUNT(rxDetected);
     }
 
     if (irq.IRQ5_AMI) {
         flags.AMI = 1;
+        RF2XX_STATS_COUNT(rxAddrMatch);
     }
 
     if (irq.IRQ6_TRX_UR) {
@@ -806,13 +809,12 @@ rf2xx_isr(void)
         flags.TRX_END = 1;
 
         if (flags.RX_START) {
-            // RX mode
             rf2xx_last_packet_timestamp = RTIMER_NOW();
             process_poll(&rf2xx_process);
-            LOG_DBG("RX_END\n");
+ 
+            RF2XX_STATS_COUNT(rxSuccess);
         } else {
-            // TX mode
-            LOG_DBG("TX_END\n");
+            RF2XX_STATS_COUNT(txCount);
         }
     }
 
@@ -837,11 +839,11 @@ PROCESS_THREAD(rf2xx_process, ev, data)
 	while(1) {
 		PROCESS_YIELD_UNTIL(!POLLING_MODE && ev == PROCESS_EVENT_POLL);
         //PROCESS_YIELD_UNTIL(rf2xx_pending_packet());
-        //RF2XX_STATS_ADD(rxToStack);
+        RF2XX_STATS_COUNT(rxToStack);
         LOG_DBG("calling receiver callback\n");
 
         packetbuf_clear();
-        //packetbuf_set_attr(PACKETBUF_ATTR_TIMESTAMP, last_packet_timestamp);
+        packetbuf_set_attr(PACKETBUF_ATTR_TIMESTAMP, rf2xx_last_packet_timestamp);
         len = rf2xx_read(packetbuf_dataptr(), PACKETBUF_SIZE);
 
         packetbuf_set_datalen(len);
