@@ -452,7 +452,11 @@ rf2xx_transmit(unsigned short transmit_len)
     BUSYWAIT_UNTIL(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
     ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
 
+    ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
+
     flags.value = 0;
+
+    ENERGEST_ON(ENERGEST_TYPE_TRANSMIT);
 
 #if TX_ARET_MODE
     regWrite(RG_TRX_STATE, TRX_CMD_TX_ARET_ON);
@@ -466,9 +470,11 @@ rf2xx_transmit(unsigned short transmit_len)
 
     flags.PLL_LOCK = 1;
 
+
     // Trigger transmit
     setSLPTR();
     clearSLPTR();
+
 
     setCS();
 
@@ -498,6 +504,8 @@ rf2xx_transmit(unsigned short transmit_len)
     BUSYWAIT_UNTIL(flags.TRX_END);
 
     flags.TRX_END = 0;
+    
+    ENERGEST_OFF(ENERGEST_TYPE_TRANSMIT);
 
 #if TX_ARET_MODE
     ASSERT(TRX_STATUS_TX_ARET_ON == bitRead(SR_TRX_STATUS));
@@ -509,6 +517,8 @@ rf2xx_transmit(unsigned short transmit_len)
 #else
     ASSERT(TRX_STATUS_TX_ON == bitRead(SR_TRX_STATUS));
 #endif
+
+    ENERGEST_ON(ENERGEST_TYPE_LISTEN);
 
     // Migrate to RX mode
 #if RX_AACK_MODE
@@ -690,6 +700,8 @@ rf2xx_on(void)
 
     flags.value = 0;
 
+    ENERGEST_ON(ENERGEST_TYPE_LISTEN);
+
 #if RX_AACK_MODE
 	regWrite(RG_TRX_STATE, TRX_CMD_RX_AACK_ON);
     BUSYWAIT_UNTIL(TRX_STATUS_RX_AACK_ON == bitRead(SR_TRX_STATUS));
@@ -716,9 +728,12 @@ rf2xx_off(void)
         ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
 
         flags.value = 0;
+        ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
 
         return 1;
     }
+
+    
 
     return 0;
 }
@@ -726,6 +741,8 @@ rf2xx_off(void)
 void
 rf2xx_isr(void)
 {
+    ENERGEST_ON(ENERGEST_TYPE_IRQ);
+
     rf2xx_irq_t irq;
     irq.value = bitRead(SR_IRQ_STATUS);
 
@@ -756,10 +773,6 @@ rf2xx_isr(void)
     if (irq.IRQ3_TRX_END) {
         flags.TRX_END = 1;
 
-        
-
-        // RSSI ?
-
         if (flags.RX_START) {
             // last_packet_timestamp
 
@@ -778,6 +791,7 @@ rf2xx_isr(void)
 
 	if (irq.IRQ7_BAT_LOW) {}
 
+    ENERGEST_OFF(ENERGEST_TYPE_IRQ);
 }
 
 
@@ -876,7 +890,7 @@ get_value(radio_param_t param, radio_value_t *value)
 
 		case RADIO_PARAM_RSSI:
             LOG_DBG("Request current RSSI\n");
-			*value = (radio_value_t)(3 * (bitRead(SR_RSSI) - 1) + RSSI_BASE_VAL);
+			*value = (3 * ((radio_value_t)bitRead(SR_RSSI) - 1) + RSSI_BASE_VAL);
 			return RADIO_RESULT_OK;
 
 		case RADIO_PARAM_LAST_LINK_QUALITY:
