@@ -77,15 +77,16 @@ PROCESS(rf2xx_process, "AT86RF2xx driver");
 
 #if LOG_DBG_ENABLED
 // SRC: https://barrgroup.com/Embedded-Systems/How-To/Define-Assert-Macro
-#define ASSERT(expr) if (!(expr)) LOG_ERR("Err: " #expr "\n")
+#define ASSERT(expr) ({ if (!(expr)) LOG_ERR("Err: " #expr "\n"); })
 #endif
 
-#define BUSYWAIT_UNTIL(expr) while(!(expr))
+#define BUSYWAIT_UNTIL(expr)    ({ while(!(expr)); })
 
 static uint8_t rf2xxChip = RF2XX_UNDEFINED;
 
 volatile uint8_t rf2xx_last_lqi;
 volatile int8_t rf2xx_last_rssi;
+volatile rtimer_clock_t rf2xx_last_packet_timestamp;
 
 
 static uint8_t txBuffer[RF2XX_MAX_FRAME_SIZE];
@@ -173,22 +174,6 @@ getLongAddr(uint8_t *addr, uint8_t len)
     for (uint8_t i = 0; i < len; i++) {
         addr[i] = regRead(RG_IEEE_ADDR_7 - i);
     }
-}
-
-
-inline static uint8_t
-getIRQs(void)
-{
-    vsnSPI_ErrorStatus status = VSN_SPI_SUCCESS;
-    uint8_t value;
-
-	setCS();
-	status = vsnSPI_pullByteTXRX(rf2xxSPI, (CMD_REG | CMD_READ), &value);
-	clearCS();
-
-    ASSERT(VSN_SPI_SUCCESS == status);
-
-    return value;
 }
 
 
@@ -443,8 +428,6 @@ rf2xx_transmit(unsigned short transmit_len)
     uint8_t trac = TRAC_SUCCESS;
     vsnSPI_ErrorStatus status = VSN_SPI_SUCCESS;
 
-    //uint8_t buffer[2 + sizeof(txBuffer)];
-
     LOG_DBG("%s\n", __func__);
 
     // Force radio into TRX_OFF mode
@@ -470,8 +453,7 @@ rf2xx_transmit(unsigned short transmit_len)
 
     flags.PLL_LOCK = 1;
 
-
-    // Trigger transmit
+    // Trigger transmit (Time critical approach)
     setSLPTR();
     clearSLPTR();
 
@@ -500,8 +482,12 @@ rf2xx_transmit(unsigned short transmit_len)
 
     LOG_DBG("Sent %u bytes\n", transmit_len);
 
+    // Trigger transmit (Non-time critical approach)
+    //setSLPTR();
+    //clearSLPTR();
+
     // Wait to complete BUSY STATE
-    BUSYWAIT_UNTIL(flags.TRX_END);
+    BUSYWAIT_UNTIL(flags.TRX_END); // TODO: Add check for TRX_END
 
     flags.TRX_END = 0;
     
@@ -532,9 +518,26 @@ rf2xx_transmit(unsigned short transmit_len)
 #endif
     flags.PLL_LOCK = 1;
 
-    //rf2xx_on();
+	switch (trac) {
+        case TRAC_SUCCESS:
+            RF2XX_STATS_ADD(txSuccess);
+			LOG_DBG("TRAC=OK\n");
+            return RADIO_TX_OK;
 
-    return RADIO_TX_OK;
+        case TRAC_NO_ACK:
+            RF2XX_STATS_ADD(txNoAck);
+            LOG_DBG("TRAC=NO-ACK\n");
+            return RADIO_TX_NOACK;
+
+        case TRAC_CHANNEL_ACCESS_FAILURE:
+            RF2XX_STATS_ADD(txCollision);
+            LOG_DBG("TRAC=collision\n");
+            return RADIO_TX_COLLISION;
+
+        default:
+            LOG_DBG("TRAC=invalid (%u)\n", trac);
+            return RADIO_TX_ERR;
+	}
 }
 
 int
@@ -547,11 +550,10 @@ rf2xx_send(const void *payload, unsigned short payload_len)
 
 int rf2xx_read(void *buf, unsigned short buf_len)
 {
-    uint8_t trac;
+    uint8_t trac = TRAC_SUCCESS;
     uint8_t dummy __attribute__((unused));
-    uint8_t payload_len = 0;
-    uint16_t crc;
     vsnSPI_ErrorStatus status = VSN_SPI_SUCCESS;
+    uint8_t payload_len;
 
     //uint8_t txBuf[2 + 127 + 1];
     //uint8_t rxBuf[2 + 127 + 1];
@@ -592,13 +594,16 @@ int rf2xx_read(void *buf, unsigned short buf_len)
     }
 
 #if !RF2XX_CONF_CHECKSUM
-    vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, (uint8_t *)&crc);
-    BUSYWAIT_UNTIL(vsnSPI_checkSPIstatus(rf2xxSPI) == VSN_SPI_SUCCESS);
+    {
+        uint16_t crc;
+        vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, (uint8_t *)&crc);
+        BUSYWAIT_UNTIL(vsnSPI_checkSPIstatus(rf2xxSPI) == VSN_SPI_SUCCESS);
 
-    vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, (uint8_t *)&crc + 1);
-    BUSYWAIT_UNTIL(vsnSPI_checkSPIstatus(rf2xxSPI) == VSN_SPI_SUCCESS);
+        vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, (uint8_t *)&crc + 1);
+        BUSYWAIT_UNTIL(vsnSPI_checkSPIstatus(rf2xxSPI) == VSN_SPI_SUCCESS);
 
-    ASSERT(crc16_data(buf, payload_len, 0x00) == crc);
+        ASSERT(crc16_data(buf, payload_len, 0x00) == crc);
+    }
 #else
     vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, &dummy);
     BUSYWAIT_UNTIL(vsnSPI_checkSPIstatus(rf2xxSPI) == VSN_SPI_SUCCESS);
@@ -622,6 +627,33 @@ int rf2xx_read(void *buf, unsigned short buf_len)
 #if !POLLING_MODE
     packetbuf_set_attr(PACKETBUF_ATTR_LINK_QUALITY, rf2xx_last_lqi);
     packetbuf_set_attr(PACKETBUF_ATTR_RSSI, rf2xx_last_rssi);
+#endif
+
+#if RX_AACK_MODE
+    // Read TRAC status either if it is not mandatory (mainly for debugging)
+    switch (bitRead(SR_TRAC_STATUS)) {
+        case TRAC_SUCCESS:
+            // Everything is OK. CRC matches.
+            LOG_DBG("TRAC=OK\n");
+            break;
+
+        case TRAC_SUCCESS_WAIT_FOR_ACK:
+            // TODO: How do we inform CONTIKI about NO-ACK?
+            LOG_DBG("TRAC=NO-ACK\n");
+            break;
+
+        case TRAC_INVALID:
+            // Something went wrong with frame.
+            // Read too fast? Buffer issues?
+            // There is a change that frame is corrupted. No sense to read LQI.
+            LOG_DBG("TRAC=INVALID\n");
+            return 0;
+
+        default:
+            // Any other state is invalid in RX mode
+            LOG_DBG("TRAC=invalid (%u)\n", trac);
+            return 0;
+    }
 #endif
 
     return payload_len;
@@ -759,7 +791,7 @@ rf2xx_isr(void)
         flags.AMI = 0;
         flags.TRX_END = 0;
 
-        printf("RX_START\n");
+        LOG_DBG("RX_START\n");
     }
 
     if (irq.IRQ5_AMI) {
@@ -774,13 +806,13 @@ rf2xx_isr(void)
         flags.TRX_END = 1;
 
         if (flags.RX_START) {
-            // last_packet_timestamp
-
+            // RX mode
+            rf2xx_last_packet_timestamp = RTIMER_NOW();
             process_poll(&rf2xx_process);
-            printf("RX_END\n");
+            LOG_DBG("RX_END\n");
         } else {
             // TX mode
-            printf("TX_END\n");
+            LOG_DBG("TX_END\n");
         }
     }
 
@@ -1084,10 +1116,12 @@ regRead(uint8_t addr)
     uint8_t value;
 
 	setCS();
-	status = vsnSPI_pullByteTXRX(rf2xxSPI, ((addr & CMD_REG_MASK) | CMD_REG | CMD_READ), &value);
+	status |= vsnSPI_pullByteTXRX(rf2xxSPI, ((addr & CMD_REG_MASK) | CMD_REG | CMD_READ), &value);
     BUSYWAIT_UNTIL(vsnSPI_checkSPIstatus(rf2xxSPI) == VSN_SPI_SUCCESS);
+
 	status |= vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, &value);
     BUSYWAIT_UNTIL(vsnSPI_checkSPIstatus(rf2xxSPI) == VSN_SPI_SUCCESS);
+
 	clearCS();
 
     ASSERT(VSN_SPI_SUCCESS == status);
@@ -1104,8 +1138,10 @@ regWrite(uint8_t addr, uint8_t value)
 	setCS();
 	status = vsnSPI_pullByteTXRX(rf2xxSPI, ((addr & CMD_REG_MASK) | CMD_REG | CMD_WRITE), &dummy);
     BUSYWAIT_UNTIL(vsnSPI_checkSPIstatus(rf2xxSPI) == VSN_SPI_SUCCESS);
+
 	status |= vsnSPI_pullByteTXRX(rf2xxSPI, value, &dummy);
     BUSYWAIT_UNTIL(vsnSPI_checkSPIstatus(rf2xxSPI) == VSN_SPI_SUCCESS);
+
 	clearCS();
 
     ASSERT(VSN_SPI_SUCCESS == status);

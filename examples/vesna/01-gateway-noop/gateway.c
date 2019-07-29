@@ -206,7 +206,7 @@ PROCESS_THREAD(border_router_process, ev, data)
 
   print_local_addresses();
 
-  etimer_set(&et, CLOCK_SECOND * 30);
+  etimer_set(&et, CLOCK_SECOND * 120);
 
 	while (1) {
 		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));

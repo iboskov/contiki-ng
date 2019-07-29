@@ -554,8 +554,8 @@ rf2xx_reset(void)
 
 	// Configure Promiscuous mode; Incomplete
 	//bitWrite(SR_AACK_PROM_MODE, RF2XX_CONF_PROMISCUOUS);
-	bitWrite(SR_AACK_UPLD_RES_FT, 1);
-	bitWrite(SR_AACK_FLTR_RES_FT, 1);
+	//bitWrite(SR_AACK_UPLD_RES_FT, 1);
+	//bitWrite(SR_AACK_FLTR_RES_FT, 1);
 
 	// Enable only specific IRQs
 	regWrite(RG_IRQ_MASK, DEFAULT_IRQ_MASK);
@@ -744,8 +744,8 @@ rf2xx_transmit(unsigned short transmit_len)
 	// Trigger transmit (see Manual p. 127, bottom)
     // The radio will start Tx, first byte needs to be written within 16us
     // (at default PA_BUF_LT and PA_LT)
-	//setSLPTR();
-	//clearSLPTR();
+	setSLPTR();
+	clearSLPTR();
 
 	// Send framebuffer write command
 	status |= vsnSPI_pullByteTXRX(rf2xxSPI, (CMD_FB | CMD_WRITE), &irq.value);
@@ -772,11 +772,6 @@ rf2xx_transmit(unsigned short transmit_len)
 	}
 
 	clearCS();
-
-	getIRQs();
-
-	setSLPTR();
-	clearSLPTR();
 
 	LOG_DBG("%u bytes sent\n", transmit_len);
 
@@ -1059,6 +1054,8 @@ void
 rf2xx_isr(void)
 {
 	ENERGEST_ON(ENERGEST_TYPE_IRQ);
+
+	printf("ISR\n");
 
 	volatile rf2xx_irq_t irq;
 	irq.value = regRead(RG_IRQ_STATUS);
