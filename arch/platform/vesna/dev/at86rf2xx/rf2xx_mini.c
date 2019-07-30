@@ -927,6 +927,11 @@ get_value(radio_param_t param, radio_value_t *value)
 			*value = (3 * ((radio_value_t)bitRead(SR_RSSI) - 1) + RSSI_BASE_VAL);
 			return RADIO_RESULT_OK;
 
+        case RADIO_PARAM_LAST_RSSI:
+            LOG_DBG("Request last RSSI\n");
+            *value = (radio_value_t)rf2xx_last_rssi;
+            return RADIO_RESULT_OK;
+
 		case RADIO_PARAM_LAST_LINK_QUALITY:
 			*value = (radio_value_t)rf2xx_last_lqi;
 			return RADIO_RESULT_OK;
