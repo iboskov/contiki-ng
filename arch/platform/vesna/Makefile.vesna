@@ -134,6 +134,28 @@ OBJCOPY_FLAGS += --gap-fill 0xff
 OBJDUMP_FLAGS += --disassemble --source --disassembler-options=force-thumb
 
 
+
+%.stlink: %.$(TARGET)
+	$(Q)openocd \
+		-f interface/stlink-v2.cfg \
+		-f target/stm32f1x.cfg \
+		-c "adapter_khz 1000" \
+		-c "init" \
+		-c "reset halt" \
+		-c "poll" \
+		-c "flash write_image erase $*.$(TARGET) 0 elf" \
+		-c "verify_image $*.$(TARGET) 0 elf" \
+		-c "reset run" \
+		-c "shutdown"
+
+
+%.debug.stlink: %.$(TARGET)
+	$(Q)openocd \
+		-f interface/stlink-v2.cfg \
+		-f target/stm32f1x.cfg \
+		-c "adapter_khz 1000"
+
+
 %.olimex: %.$(TARGET)
 	$(Q)openocd \
 		-s $(CONTIKI)/arch/platform/$(TARGET)/OpenOCD/ \
@@ -147,7 +169,7 @@ OBJDUMP_FLAGS += --disassemble --source --disassembler-options=force-thumb
 		-c "shutdown"
 
 
-%.debug: %.$(TARGET)
+%.debug %.debug.olimex: %.$(TARGET)
 	$(Q)openocd \
 		-s $(ARCH_PATH)/platform/$(TARGET)/OpenOCD/ \
 		-f snc_olimex_gdb.cfg
