@@ -65,8 +65,8 @@
 
 #define TX_ARET_MODE    (0)
 #define RX_AACK_MODE    (0)
-#define POLLING_MODE    (0)
-#define AUTO_CCA        (1) // Do we manually perform CCA?
+#define POLLING_MODE    (1) // 6TiSCH
+#define AUTO_CCA        (0) // Do we manually perform CCA?
 
 #define TX_TIME_CRITICAL (1) // Trigger transmit while still transfering to frame buffer
 
@@ -510,7 +510,7 @@ rf2xx_transmit(unsigned short transmit_len)
     // Read TRAC status 
     trac = bitRead(SR_TRAC_STATUS);
 #else
-    BUSYWAIT_UNTIL(flags.TRX_END);
+    RTIMER_BUSYWAIT_UNTIL(flags.TRX_END, US_TO_RTIMERTICKS(4096)); //Max transmit time
     ASSERT(TRX_STATUS_TX_ON == bitRead(SR_TRX_STATUS));
 #endif
 
@@ -642,7 +642,7 @@ int rf2xx_read(void *buf, unsigned short buf_len)
 #endif
 
 #if RX_AACK_MODE
-    uint8_t trac = bitRead(SR_TRAC_STATUS)
+    uint8_t trac = bitRead(SR_TRAC_STATUS);
     // Read TRAC status either if it is not mandatory (mainly for debugging)
     switch (trac) {
         case TRAC_SUCCESS:
@@ -710,11 +710,19 @@ rf2xx_channel_clear(void)
 }
 
 
-int
+int // Check if the radio driver is currently receiving a packet 
 rf2xx_receiving_packet(void)
 {
     LOG_DBG("%s\n", __func__);
     return flags.RX_START && !flags.TRX_END;
+
+/*
+    bool irqEnabled = int_master_is_enabled();
+    if(!irqEnabled){
+        LOG_INFO("IRQ is disabled!\n");
+    }
+
+#if POLLING_MODE
     uint8_t trxState = bitRead(SR_TRX_STATUS);
     switch (trxState) {
         case TRX_STATUS_BUSY_RX:
@@ -725,11 +733,16 @@ rf2xx_receiving_packet(void)
         default:
             return 0;
     }
+#else
+    return flags.RX_START && !flags.TRX_END;
+#endif
+*/
 }
 
-int
+int // Check if the radio driver has just received a packet 
 rf2xx_pending_packet(void)
 {
+    LOG_DBG("%s\n", __func__);
     return flags.RX_START && flags.TRX_END;
 }
 
@@ -1024,7 +1037,15 @@ set_value(radio_param_t param, radio_value_t value)
             setShortAddr(value);
             return RADIO_RESULT_OK;
 
-        //case RADIO_PARAM_RX_MODE:
+        case RADIO_PARAM_RX_MODE:
+            return RADIO_RESULT_OK;
+    
+        case RADIO_PARAM_TX_MODE:
+            return RADIO_RESULT_OK;
+
+            //if(value & ~(RADIO_RX_MODE_ADDRESS_FILTER |RADIO_RX_MODE_AUTOACK | RADIO_RX_MODE_POLL_MODE)) {
+            //    return RADIO_RESULT_INVALID_VALUE;
+            //}
             //LOG_DBG("RADIO_PARAM_RX_MODE 0x%02x\n", value);
             //opts.addrFilter = !!(value & RADIO_RX_MODE_ADDRESS_FILTER);
             //opts.autoACK = !!(value & RADIO_RX_MODE_AUTOACK);
@@ -1057,8 +1078,6 @@ set_value(radio_param_t param, radio_value_t value)
             return RADIO_RESULT_OK;
 
         case RADIO_PARAM_SHR_SEARCH:
-        case RADIO_PARAM_RX_MODE:
-        case RADIO_PARAM_TX_MODE:
         default:
             return RADIO_RESULT_NOT_SUPPORTED;
 	}
@@ -1076,9 +1095,9 @@ get_object(radio_param_t param, void *dest, size_t size)
 			return RADIO_RESULT_OK;
 
 		case RADIO_PARAM_LAST_PACKET_TIMESTAMP:
-		//	// TODO: Some extra chech of size???
-		//	*(rtimer_clock_t *)dest = last_packet_timestamp;
-		//	return RADIO_RESULT_OK;
+		//	// TODO: Some extra check of size??
+		    *(rtimer_clock_t *)dest = rf2xx_last_packet_timestamp;
+		    return RADIO_RESULT_OK;
 
 		//#if MAC_CONF_WITH_TSCH
 		//case RADIO_CONST_TSCH_TIMING:

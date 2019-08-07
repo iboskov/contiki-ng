@@ -22,7 +22,8 @@
 
 // Platform specific timer bit-size
 // STM32F103 has 16-bit counter
-#define RTIMER_CONF_CLOCK_SIZE  (8)
+#define RTIMER_CONF_CLOCK_SIZE  (2)
+
 typedef uint64_t clock_time_t;
 typedef uint32_t uip_stats_t;
 
@@ -40,7 +41,7 @@ typedef uint32_t uip_stats_t;
 #define NETSTACK_CONF_RADIO 	rf2xx_driver
 
 
-#define TSCH_CONF_BASE_DRIFT_PPM    1000
+#define TSCH_CONF_BASE_DRIFT_PPM    RF2XX_BASE_DRIFT_PPM    //(before it was 1000)
 #define RADIO_DELAY_BEFORE_RX       RF2XX_DELAY_BEFORE_RX
 #define RADIO_DELAY_BEFORE_TX       RF2XX_DELAY_BEFORE_TX
 #define RADIO_DELAY_BEFORE_DETECT   RF2XX_DELAY_BEFORE_DETECT

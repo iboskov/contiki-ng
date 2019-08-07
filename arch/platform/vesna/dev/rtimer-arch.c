@@ -28,7 +28,7 @@
 #define RTIMER_APB1 RCC_APB1Periph_TIM5
 
 
-volatile uint32_t overflow = 0;
+//volatile uint32_t overflow = 0;
 
 
 uint32_t rtimer_arch_us_to_rtimerticks(int32_t us) {
@@ -66,9 +66,9 @@ uint32_t rtimer_arch_rtimerticks_to_us(int32_t ticks) {
 void rtimer_arch_init(void) {
 
     TIM_TimeBaseInitTypeDef timerInitStructure = {
-        .TIM_Prescaler = 1000 - 1, // 0 = run @ 64MHz, 63 = run at 1MHz; 999 = run at 64kHz
+        .TIM_Prescaler = 977 - 1, // 0 = run @ 64MHz, 63 = run at 1MHz; 999 = run at 64kHz | 977 = run at 65506 Hz
         .TIM_CounterMode = TIM_CounterMode_Up,
-        .TIM_Period = 64000 - 1, // upper bound value of counter
+        .TIM_Period = 0xFFFF - 1, // upper bound value of counter (65536)
         .TIM_ClockDivision = TIM_CKD_DIV1,
         .TIM_RepetitionCounter = 0, // Not available on TIM5 anyway
     };
@@ -99,7 +99,7 @@ void rtimer_arch_init(void) {
     // Disable interrupts from compare register 1
     TIM_ITConfig(RTIMER_TIM, 0xFF, DISABLE);
 
-    TIM_ITConfig(TIM5, TIM_IT_Update, ENABLE);
+    //TIM_ITConfig(TIM5, TIM_IT_Update, ENABLE);    // For overflow
 
     // Clear interrupt bit, if it was triggered for some reason
     TIM_ClearITPendingBit(RTIMER_TIM, TIM_IT_CC1);
@@ -168,17 +168,19 @@ void rtimer_arch_init(void) {
 rtimer_clock_t
 rtimer_arch_now(void)
 {   
-    //rtimer_clock_t t = TIM_GetCounter(TIM5);
-    //printf("%uticks\n", t);
-    return (rtimer_clock_t)TIM_GetCounter(RTIMER_TIM) + overflow * RTIMER_ARCH_SECOND;
-    //return t;
+    __disable_irq();
+    rtimer_clock_t t = (rtimer_clock_t)TIM_GetCounter(RTIMER_TIM);
+    //t += overflow * RTIMER_ARCH_SECOND;
+    __enable_irq();
+
+    return t;
 }
 
 
 void
 rtimer_arch_schedule(rtimer_clock_t t)
 {
-    t = t % RTIMER_ARCH_SECOND;
+    __disable_irq();
 
     //printf("NOW=%lu FUT=%lu\n", rtimer_arch_now(), t);
     TIM_ITConfig(RTIMER_TIM, TIM_IT_CC1, DISABLE);
@@ -187,11 +189,13 @@ rtimer_arch_schedule(rtimer_clock_t t)
     TIM_OCInitTypeDef tim_oc1_init;
     tim_oc1_init.TIM_OCMode = TIM_OCMode_Timing;
     tim_oc1_init.TIM_OCPolarity = TIM_OCPolarity_High;
-    tim_oc1_init.TIM_Pulse = t; // To be compared against
+    tim_oc1_init.TIM_Pulse = (uint16_t)t; // To be compared against
     tim_oc1_init.TIM_OutputState = TIM_OutputState_Disable;
 
     TIM_OC1Init(RTIMER_TIM, &tim_oc1_init);
     TIM_ITConfig(RTIMER_TIM, TIM_IT_CC1, ENABLE);
+
+    __enable_irq();
 }
 
 
@@ -200,7 +204,7 @@ contiki_rtimer_isr(void)
 {
     if (TIM_GetITStatus(RTIMER_TIM, TIM_IT_Update) != RESET) {
         TIM_ClearITPendingBit(RTIMER_TIM, TIM_IT_Update);
-        overflow += 1;
+        //overflow += 1;
     }
 
     if (TIM_GetITStatus(RTIMER_TIM, TIM_IT_CC1) != RESET) {

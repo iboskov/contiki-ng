@@ -3,35 +3,32 @@
 
 #include "sys/rtimer.h"
 
-// Hint: See rtimer-arch.c for explanation why such value
-#define RTIMER_ARCH_SECOND		(64000)
+// Rtimer is 16bit counter with freq of 65.506 kHZ
+// The timer is not 100% accurate (it does not run at 65.536 kHz)
+// See rtimer-arch.c for explanation why such value
+#define RTIMER_ARCH_SECOND		(65536)
 
+// Converts micro seconds to rtimer ticks (65536 ticks/s ---> 1us = 0.065536 tick)
+// Eqn.: T = (us * 0.065536) +- 1/2
+#define US_TO_RTIMERTICKS(us)   ((us) >= 0 ? \
+                                (uint32_t)(((((int64_t)(us)) * (RTIMER_ARCH_SECOND)) + 500000) / 1000000L) : \
+                                (uint32_t)(((((int64_t)(us)) * (RTIMER_ARCH_SECOND)) - 500000) / 1000000L)) 
 
-rtimer_clock_t rtimer_arch_now(void);
-uint32_t rtimer_arch_us_to_rtimerticks(int32_t us);
-uint32_t rtimer_arch_rtimerticks_to_us(int32_t ticks);
+// Converts rtimer ticks to micro seconds (1/65536 Hz ---> 1 tick ~ 15.25879 us)
+// Eqn.: us = (T * 15.258) +- 1/2
+#define RTIMERTICKS_TO_US(t)    ((t) >= 0? \
+                                ((((int32_t)(t)) * 1000000L + ((RTIMER_ARCH_SECOND) / 2)) / (RTIMER_ARCH_SECOND)) : \
+                                ((((int32_t)(t)) * 1000000L - ((RTIMER_ARCH_SECOND) / 2)) / (RTIMER_ARCH_SECOND)))
 
-// converts micro-seconds to rtimer ticks (1 tick ~ 15.625us -> 0.064 tick/us)
-#define US_TO_RTIMERTICKS(us)   (((us) * 64) / 1000)
-//#define US_TO_RTIMERTICKS       rtimer_arch_us_to_rtimerticks
+// Converts rtimer ticks to micro-seconds (64-bit version) because the 32-bit one cannot handle T >= 4294 ticks.
+// Intended only for positive values of t
+#define RTIMERTICKS_TO_US_64(t) ((uint32_t)(((int64_t)(t)) * 1000000L + ((RTIMER_ARCH_SECOND) / 2)) / (RTIMER_ARCH_SECOND)) 
 
-// converts rtimer ticks to micro-seconds (1/64kHz ~ 15.625us/tick)
-#define RTIMERTICKS_TO_US(t)    (((t) * 15625) / 1000)
-
-//#define RTIMERTICKS_TO_US       rtimer_arch_rtimerticks_to_us
-
-// converts rtimer ticks to micro-seconds (64-bit version)
-#define RTIMERTICKS_TO_US_64(t) (((t) * 15625) / 1000)
-//#define RTIMERTICKS_TO_US_64    rtimer_arch_rtimerticks_to_us
-
-
-/* A 64-bit version because the 32-bit one cannot handle T >= 4295 ticks.
-   Intended only for positive values of T. */
-//#define RTIMERTICKS_TO_US_64(T)  ((uint32_t)(((uint64_t)(T) * 1000000 + ((RTIMER_ARCH_SECOND) / 2)) / (RTIMER_ARCH_SECOND)))
 
 void contiki_rtimer_isr(void);
+rtimer_clock_t rtimer_arch_now(void);
 
-
-
+uint32_t rtimer_arch_us_to_rtimerticks(int32_t us);
+uint32_t rtimer_arch_rtimerticks_to_us(int32_t ticks);
 
 #endif
