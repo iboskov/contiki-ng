@@ -14,16 +14,16 @@
 
 // the delay between radio Tx request and SFD sent, in rtimer ticks
 // This includes (FORCE_TRX_OFF, TX_ARET/PLL_ON, delay, PREAMBLE+SFD (p.39))
-#define RF2XX_DELAY_BEFORE_TX		((unsigned)US_TO_RTIMERTICKS(250))
+#define RF2XX_DELAY_BEFORE_TX		((unsigned)US_TO_RTIMERTICKS(500))          //TODO: if value below 500 got !dl-miss TxBeforeAck
 // * FORCE_TRX_OFF        - 1us
 // * TRX_OFF -> PLL_ON    - 110us
 // * PLL_ON -> BUSY_RX    - 16us
-// * PREAMBLE + SFD       - 96us (160us)
+// * PREAMBLE + SFD       - 160us (96us)
 //                        = 223us
 
 // the delay between radio Rx request and start listening, in rtimer ticks
 // (we need time from end of Tx until it reaches Rx mode again)
-#define RF2XX_DELAY_BEFORE_RX		((unsigned)US_TO_RTIMERTICKS(250))   
+#define RF2XX_DELAY_BEFORE_RX		((unsigned)US_TO_RTIMERTICKS(350))   
 // * PLL_ON -> RX_ON      - 1us
 // * Time until PLL_LOCK                  // Even if the registerbits TRX_STATUS indicates RX_ON
 //   should occur         - 32us          // actual frame reception canonly start once the PLL has locked.
@@ -37,9 +37,10 @@
 // * 1 length byte + 2 bytes CRC
 
 // the delay between the end of SFD reception and the radio returning 1 to receiving_packet()
-#define RF2XX_DELAY_BEFORE_DETECT	((unsigned)US_TO_RTIMERTICKS(10)) 
+#define RF2XX_DELAY_BEFORE_DETECT	((unsigned)US_TO_RTIMERTICKS(50)) 
 // * RX_START flag
-//   if interrupts are working - 0us
+//   interrupt latency    - 9us
+// * PHR reception        - 32us
 
 
 #define RF2XX_BYTE_AIR_TIME			(32) // us for 1 byte (@250kbps)

@@ -717,11 +717,6 @@ rf2xx_receiving_packet(void)
     return flags.RX_START && !flags.TRX_END;
 
 /*
-    bool irqEnabled = int_master_is_enabled();
-    if(!irqEnabled){
-        LOG_INFO("IRQ is disabled!\n");
-    }
-
 #if POLLING_MODE
     uint8_t trxState = bitRead(SR_TRX_STATUS);
     switch (trxState) {
@@ -743,7 +738,17 @@ int // Check if the radio driver has just received a packet
 rf2xx_pending_packet(void)
 {
     LOG_DBG("%s\n", __func__);
-    return flags.RX_START && flags.TRX_END;
+    
+    //return flags.RX_START && flags.TRX_END;
+    
+    if(flags.TRX_END && flags.RX_START){
+        flags.TRX_END = 0;
+        flags.RX_START = 0;
+        return 1;
+    }
+    else{
+        return 0;
+    }
 }
 
 
@@ -752,26 +757,40 @@ rf2xx_on(void)
 {
     LOG_DBG("%s\n", __func__);
 
-    regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
-    BUSYWAIT_UNTIL(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
-    ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
+    uint8_t state = bitRead(SR_TRX_STATUS);
+    if( (state == TRX_STATUS_RX_ON) || (state == TRX_STATUS_RX_AACK_ON)){
+        LOG_DBG("Radio is allready on\n");
+        return 1;
+    }
+    else{                             
+        regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
+        BUSYWAIT_UNTIL(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
+        ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
 
-    flags.value = 0;
+    // When in polling mode we should't erase RX_START and TRX_END flags
+    #if POLLING_MODE
+        flags.AMI       = 0;
+        flags.TRX_UR    = 0;
+        flags.CCA       = 0; 
+        flags.SLEEP     = 0;
+    #else
+        flags.value = 0;
+    #endif
 
-    ENERGEST_ON(ENERGEST_TYPE_LISTEN);
+        ENERGEST_ON(ENERGEST_TYPE_LISTEN);
 
-#if RX_AACK_MODE
-	regWrite(RG_TRX_STATE, TRX_CMD_RX_AACK_ON);
-    BUSYWAIT_UNTIL(TRX_STATUS_RX_AACK_ON == bitRead(SR_TRX_STATUS));
-    ASSERT(TRX_STATUS_RX_AACK_ON == bitRead(SR_TRX_STATUS));
-#else
-	regWrite(RG_TRX_STATE, TRX_CMD_RX_ON);
-    BUSYWAIT_UNTIL(TRX_STATUS_RX_ON == bitRead(SR_TRX_STATUS));
-    ASSERT(TRX_STATUS_RX_ON == bitRead(SR_TRX_STATUS));
-#endif
-    flags.PLL_LOCK = 1;
-
-    return 1;
+    #if RX_AACK_MODE
+        regWrite(RG_TRX_STATE, TRX_CMD_RX_AACK_ON);
+        BUSYWAIT_UNTIL(TRX_STATUS_RX_AACK_ON == bitRead(SR_TRX_STATUS));
+        ASSERT(TRX_STATUS_RX_AACK_ON == bitRead(SR_TRX_STATUS));
+    #else
+        regWrite(RG_TRX_STATE, TRX_CMD_RX_ON);
+        BUSYWAIT_UNTIL(TRX_STATUS_RX_ON == bitRead(SR_TRX_STATUS));
+        ASSERT(TRX_STATUS_RX_ON == bitRead(SR_TRX_STATUS));
+    #endif
+        flags.PLL_LOCK = 1;
+        return 1;
+    }
 }
 
 
@@ -785,13 +804,20 @@ rf2xx_off(void)
         BUSYWAIT_UNTIL(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
         ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
 
-        flags.value = 0;
+        // In polling mode we should't erase RX_START and TRX_END flags
+        #if POLLING_MODE
+            flags.PLL_LOCK  = 0;     
+            flags.AMI       = 0;
+            flags.TRX_UR    = 0;
+            flags.CCA       = 0; 
+            flags.SLEEP     = 0;
+        #else
+            flags.value = 0;
+        #endif
         ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
 
         return 1;
     }
-
-    
 
     return 0;
 }
