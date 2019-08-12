@@ -81,5 +81,4 @@ extern volatile uint32_t rf2xxStats[RF2XX_STATS_COUNT];
 #define RF2XX_STATS_COUNT(event)
 #define RF2XX_STATS_RESET()
 
-
 #endif

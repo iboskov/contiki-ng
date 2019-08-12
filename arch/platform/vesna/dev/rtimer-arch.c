@@ -23,8 +23,8 @@
 #include "stm32f10x_tim.h"
 
 
-#define RTIMER_TIM  TIM5
-#define RTIMER_IRQN TIM5_IRQn
+#define RTIMER_TIMx TIM5
+#define RTIMER_IRQn TIM5_IRQn
 #define RTIMER_APB1 RCC_APB1Periph_TIM5
 
 
@@ -78,15 +78,15 @@ void rtimer_arch_init(void) {
     RCC_APB1PeriphClockCmd(RTIMER_APB1, ENABLE);
 
     // Disable to configure it
-    TIM_Cmd(RTIMER_TIM, DISABLE);
+    TIM_Cmd(RTIMER_TIMx, DISABLE);
 
     // Initialize timer
-    TIM_TimeBaseInit(RTIMER_TIM, &timerInitStructure);
+    TIM_TimeBaseInit(RTIMER_TIMx, &timerInitStructure);
 
     //TIM_PrescalerConfig(TIM5, 1000 - 1, TIM_PSCReloadMode_Immediate);
 
     // Set initial value (value could be random at power on)
-    TIM_SetCounter(RTIMER_TIM, 0);
+    TIM_SetCounter(RTIMER_TIMx, 0);
 
     // Not really sure what it is, but is used for PWM usecase. Disable it.
     //TIM_OC1PreloadConfig(RTIMER_TIM, TIM_OCPreload_Disable);
@@ -96,23 +96,22 @@ void rtimer_arch_init(void) {
     // We are not controlling any pins
     //TIM_CtrlPWMOutputs(TIM5, DISABLE);
 
-    // Disable interrupts from compare register 1
-    TIM_ITConfig(RTIMER_TIM, 0xFF, DISABLE);
+    // Disable ALL interrupts from TIM5
+    TIM_ITConfig(RTIMER_TIMx, 0xFF, DISABLE);
 
     //TIM_ITConfig(TIM5, TIM_IT_Update, ENABLE);    // For overflow
 
     // Clear interrupt bit, if it was triggered for some reason
-    TIM_ClearITPendingBit(RTIMER_TIM, TIM_IT_CC1);
-    TIM_ClearITPendingBit(RTIMER_TIM, TIM_IT_Update);
+    TIM_ClearITPendingBit(RTIMER_TIMx, TIM_IT_CC1);
+    //TIM_ClearITPendingBit(RTIMER_TIM, TIM_IT_Update);
 
 
     NVIC_InitTypeDef NVIC_InitStructure;
-    NVIC_InitStructure.NVIC_IRQChannel = RTIMER_IRQN;
+    NVIC_InitStructure.NVIC_IRQChannel = RTIMER_IRQn;
 	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 3;
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 3;
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
-
 
     /*
     TIM_OCInitTypeDef tim_oc2_init;
@@ -129,7 +128,7 @@ void rtimer_arch_init(void) {
 
 
     // Enable timer back, since it was configured
-    TIM_Cmd(RTIMER_TIM, ENABLE);
+    TIM_Cmd(RTIMER_TIMx, ENABLE);
 
     /*
     // for real-time counter we will use TIM5 counter.
@@ -168,12 +167,7 @@ void rtimer_arch_init(void) {
 rtimer_clock_t
 rtimer_arch_now(void)
 {   
-    __disable_irq();
-    rtimer_clock_t t = (rtimer_clock_t)TIM_GetCounter(RTIMER_TIM);
-    //t += overflow * RTIMER_ARCH_SECOND;
-    __enable_irq();
-
-    return t;
+    return (rtimer_clock_t)TIM_GetCounter(RTIMER_TIMx);
 }
 
 
@@ -183,8 +177,8 @@ rtimer_arch_schedule(rtimer_clock_t t)
     __disable_irq();
 
     //printf("NOW=%lu FUT=%lu\n", rtimer_arch_now(), t);
-    TIM_ITConfig(RTIMER_TIM, TIM_IT_CC1, DISABLE);
-    TIM_ClearITPendingBit(RTIMER_TIM, TIM_IT_CC1);
+    TIM_ITConfig(RTIMER_TIMx, TIM_IT_CC1, DISABLE);
+    TIM_ClearITPendingBit(RTIMER_TIMx, TIM_IT_CC1);
 
     TIM_OCInitTypeDef tim_oc1_init;
     tim_oc1_init.TIM_OCMode = TIM_OCMode_Timing;
@@ -192,8 +186,8 @@ rtimer_arch_schedule(rtimer_clock_t t)
     tim_oc1_init.TIM_Pulse = (uint16_t)t; // To be compared against
     tim_oc1_init.TIM_OutputState = TIM_OutputState_Disable;
 
-    TIM_OC1Init(RTIMER_TIM, &tim_oc1_init);
-    TIM_ITConfig(RTIMER_TIM, TIM_IT_CC1, ENABLE);
+    TIM_OC1Init(RTIMER_TIMx, &tim_oc1_init);
+    TIM_ITConfig(RTIMER_TIMx, TIM_IT_CC1, ENABLE);
 
     __enable_irq();
 }
@@ -202,15 +196,15 @@ rtimer_arch_schedule(rtimer_clock_t t)
 void
 contiki_rtimer_isr(void)
 {
-    if (TIM_GetITStatus(RTIMER_TIM, TIM_IT_Update) != RESET) {
-        TIM_ClearITPendingBit(RTIMER_TIM, TIM_IT_Update);
-        //overflow += 1;
-    }
+    //if (TIM_GetITStatus(RTIMER_TIMx, TIM_IT_Update) != RESET) {
+    //    TIM_ClearITPendingBit(RTIMER_TIMx, TIM_IT_Update);
+    //    //overflow += 1;
+    //}
 
-    if (TIM_GetITStatus(RTIMER_TIM, TIM_IT_CC1) != RESET) {
+    if (TIM_GetITStatus(RTIMER_TIMx, TIM_IT_CC1) != RESET) {
         // Comparator 1 trigger
-        TIM_ITConfig(RTIMER_TIM, TIM_IT_CC1, DISABLE);
-        TIM_ClearITPendingBit(RTIMER_TIM, TIM_IT_CC1);
+        TIM_ITConfig(RTIMER_TIMx, TIM_IT_CC1, DISABLE);
+        TIM_ClearITPendingBit(RTIMER_TIMx, TIM_IT_CC1);
 
         rtimer_run_next();
     }

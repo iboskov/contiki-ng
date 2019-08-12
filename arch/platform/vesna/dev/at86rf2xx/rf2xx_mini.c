@@ -65,8 +65,9 @@
 
 #define TX_ARET_MODE    (0)
 #define RX_AACK_MODE    (0)
-#define POLLING_MODE    (1) // 6TiSCH
-#define AUTO_CCA        (0) // Do we manually perform CCA?
+#define POLLING_MODE    (0)
+#define AUTO_CCA        (1) // Do we manually perform CCA?
+#define ADDR_FILTER     (1)
 
 #define TX_TIME_CRITICAL (1) // Trigger transmit while still transfering to frame buffer
 
@@ -199,12 +200,6 @@ rf2xx_reset(void)
 	clearEXTI(); // clear interrupt flag
     clearRST(); // release radio from RESET state
 
-    //regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
-    //BUSYWAIT_UNTIL(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
-    //ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
-
-    //flags.value = 0;
-
     rf2xx_off();
 
 	// Print for what pin layout was compiled.
@@ -286,9 +281,11 @@ rf2xx_reset(void)
 	//bitWrite(SR_SPI_CMD_MODE, SPI_CMD_MODE__IRQ_STATUS);
 
 	// Configure Promiscuous mode; Incomplete
+#if !ADDR_FILTER
 	bitWrite(SR_AACK_PROM_MODE, 1);
 	bitWrite(SR_AACK_UPLD_RES_FT, 1);
 	bitWrite(SR_AACK_FLTR_RES_FT, 1);
+#endif
 
 	// Enable only specific IRQs
 	regWrite(RG_IRQ_MASK, DEFAULT_IRQ_MASK);
@@ -513,8 +510,6 @@ rf2xx_transmit(unsigned short transmit_len)
     RTIMER_BUSYWAIT_UNTIL(flags.TRX_END, US_TO_RTIMERTICKS(4096)); //Max transmit time
     ASSERT(TRX_STATUS_TX_ON == bitRead(SR_TRX_STATUS));
 #endif
-
-    flags.TRX_END = 0;
     
     ENERGEST_OFF(ENERGEST_TYPE_TRANSMIT);
 
@@ -563,6 +558,7 @@ rf2xx_send(const void *payload, unsigned short payload_len)
 	return rf2xx_transmit(payload_len);
 }
 
+// What if we read frame inside interrupt
 int rf2xx_read(void *buf, unsigned short buf_len)
 {
     uint8_t dummy __attribute__((unused));
@@ -570,18 +566,11 @@ int rf2xx_read(void *buf, unsigned short buf_len)
     uint8_t payload_len = 0;
     uint16_t tx_crc;
 
-    //uint8_t txBuf[2 + 127 + 1];
-    //uint8_t rxBuf[2 + 127 + 1];
-
-    //txBuf[0] = (CMD_FB | CMD_READ);
-
     LOG_DBG("%s\n", __func__);
 
-    //dummy = regRead(RG_IRQ_STATUS);
-
-    flags.TRX_END = 0;
     flags.RX_START = 0;
     flags.AMI = 0;
+    flags.TRX_END = 0;
 
     status = clearCS();
     if (VSN_SPI_SUCCESS != status) return 0;
@@ -713,7 +702,7 @@ rf2xx_channel_clear(void)
 int // Check if the radio driver is currently receiving a packet 
 rf2xx_receiving_packet(void)
 {
-    LOG_DBG("%s\n", __func__);
+    //LOG_DBG("%s\n", __func__);
     return flags.RX_START && !flags.TRX_END;
 
 /*
@@ -755,7 +744,7 @@ rf2xx_pending_packet(void)
 int
 rf2xx_on(void)
 {
-    LOG_DBG("%s\n", __func__);
+    //LOG_DBG("%s\n", __func__);
 
     uint8_t state = bitRead(SR_TRX_STATUS);
     if( (state == TRX_STATUS_RX_ON) || (state == TRX_STATUS_RX_AACK_ON)){
@@ -799,10 +788,9 @@ rf2xx_off(void)
 {
     LOG_DBG("%s\n", __func__);
 
-    if (!rf2xx_receiving_packet()) {
-        regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
-        BUSYWAIT_UNTIL(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
-        ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
+    regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
+    BUSYWAIT_UNTIL(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
+    ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
 
         // In polling mode we should't erase RX_START and TRX_END flags
         #if POLLING_MODE
@@ -816,8 +804,7 @@ rf2xx_off(void)
         #endif
         ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
 
-        return 1;
-    }
+    ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
 
     return 0;
 }
@@ -955,7 +942,7 @@ get_value(radio_param_t param, radio_value_t *value)
 
 		case RADIO_PARAM_RX_MODE:
             *value = 0;
-			if (RX_AACK_MODE) *value |= RADIO_RX_MODE_ADDRESS_FILTER;
+			if (RX_AACK_MODE && ADDR_FILTER) *value |= RADIO_RX_MODE_ADDRESS_FILTER;
 			if (RX_AACK_MODE) *value |= RADIO_RX_MODE_AUTOACK;
 			if (POLLING_MODE) *value |= RADIO_RX_MODE_POLL_MODE;
             return RADIO_RESULT_OK;
@@ -1064,9 +1051,11 @@ set_value(radio_param_t param, radio_value_t value)
             return RADIO_RESULT_OK;
 
         case RADIO_PARAM_RX_MODE:
+            // FIXME:
             return RADIO_RESULT_OK;
     
         case RADIO_PARAM_TX_MODE:
+            // FIXME:
             return RADIO_RESULT_OK;
 
             //if(value & ~(RADIO_RX_MODE_ADDRESS_FILTER |RADIO_RX_MODE_AUTOACK | RADIO_RX_MODE_POLL_MODE)) {
@@ -1121,7 +1110,7 @@ get_object(radio_param_t param, void *dest, size_t size)
 			return RADIO_RESULT_OK;
 
 		case RADIO_PARAM_LAST_PACKET_TIMESTAMP:
-		//	// TODO: Some extra check of size??
+			// TODO: Some extra check of size??
 		    *(rtimer_clock_t *)dest = rf2xx_last_packet_timestamp;
 		    return RADIO_RESULT_OK;
 
