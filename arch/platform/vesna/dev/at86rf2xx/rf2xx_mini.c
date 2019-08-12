@@ -88,14 +88,29 @@ volatile uint32_t rf2xxStats[RF2XX_STATS_COUNT] = { 0 };
 
 #define BUSYWAIT_UNTIL(expr)    ({ while(!(expr)); })
 
+// Structure for Rx & Tx frame
+typedef struct {
+    uint8_t buf[RF2XX_MAX_PAYLOAD_SIZE];
+    uint8_t buf_len; // in case of size == 0 frame is invalid
+    uint16_t crc;
+    uint8_t trac;
+    uint8_t valid;
+    // rtimer_clock_t timestamp;
+} rf2xx_frame;
+
+// TODO: We could even manage with only one buffer.
+static rf2xx_frame txBuffer;
+static rf2xx_frame rxBuffer;
+
+
+
 static uint8_t rf2xxChip = RF2XX_UNDEFINED;
 
 volatile uint8_t rf2xx_last_lqi;
 volatile int8_t rf2xx_last_rssi;
 volatile rtimer_clock_t rf2xx_last_packet_timestamp;
 
-
-static uint8_t txBuffer[RF2XX_MAX_FRAME_SIZE];
+//static uint8_t txBuffer[RF2XX_MAX_FRAME_SIZE];
 
 
 volatile static rf2xx_flags_t flags;
@@ -408,14 +423,17 @@ rf2xx_prepare(const void *payload, unsigned short payload_len)
         return RADIO_TX_ERR;
     }
 
-    memcpy(txBuffer, payload, payload_len);
+    memcpy(txBuffer.buf, payload, payload_len);
+    txBuffer.buf_len = payload_len;
+
     LOG_DBG("Prepared %u bytes\n", payload_len);
 
 #if !RF2XX_CONF_CHECKSUM
     {
         // Copy CRC
-        uint8_t crc = crc16_data(payload, payload_len, 0x00);
-        memcpy(txBuffer + payload_len, (uint8_t *)&crc, 2);
+        uint16_t crc = crc16_data(payload, payload_len, 0x00);
+        //memcpy(txBuffer + payload_len, (uint8_t *)&crc, 2);
+        txBuffer.crc = crc;
         LOG_DBG("CRC == 0x%04x\n", crc);
     }
 #endif
@@ -428,7 +446,7 @@ int
 rf2xx_transmit(unsigned short transmit_len)
 {
     uint8_t dummy __attribute__((unused));
-    uint8_t trac = TRAC_SUCCESS;
+    //uint8_t trac = TRAC_SUCCESS;
     vsnSPI_ErrorStatus status = VSN_SPI_SUCCESS;
 
     LOG_DBG("%s\n", __func__);
@@ -474,18 +492,27 @@ rf2xx_transmit(unsigned short transmit_len)
     if (VSN_SPI_SUCCESS != status) return RADIO_TX_ERR;
 
     // Inform radio about frame size
-    status = vsnSPI_pullByteTXRX(rf2xxSPI, transmit_len + 2, &dummy); // payload + CRC
+    status = vsnSPI_pullByteTXRX(rf2xxSPI, txBuffer.buf_len + RF2XX_CRC_SIZE, &dummy); // payload + CRC
     if (VSN_SPI_SUCCESS != status) return RADIO_TX_ERR;
+
+//#if !RF2XX_CONF_CHECKSUM
+//    // If CRC calculation is not offloaded to the radio copy 2 CRC bytes
+//    transmit_len += RF2XX_CRC_SIZE;
+//#endif
+
+    for (uint8_t i = 0; i < txBuffer.buf_len; i++) {
+        status = vsnSPI_pullByteTXRX(rf2xxSPI, txBuffer.buf[i], &dummy);
+        if (VSN_SPI_SUCCESS != status) return RADIO_TX_ERR;
+    }
 
 #if !RF2XX_CONF_CHECKSUM
     // If CRC calculation is not offloaded to the radio copy 2 CRC bytes
-    transmit_len += RF2XX_CRC_SIZE;
-#endif
+    status = vsnSPI_pullByteTXRX(rf2xxSPI, (uint8_t[2])txBuffer.crc[0], &dummy); // write to FB
+    if (VSN_SPI_SUCCESS != status) return RADIO_TX_ERR;
 
-    for (uint8_t i = 0; i < transmit_len; i++) {
-        status = vsnSPI_pullByteTXRX(rf2xxSPI, txBuffer[i], &dummy);
-        if (VSN_SPI_SUCCESS != status) return RADIO_TX_ERR;
-    }
+    status = vsnSPI_pullByteTXRX(rf2xxSPI, (uint8_t[2])txBuffer.crc[1], &dummy); // write to FB
+    if (VSN_SPI_SUCCESS != status) return RADIO_TX_ERR;
+#endif
 
     clearCS();
 
@@ -505,7 +532,7 @@ rf2xx_transmit(unsigned short transmit_len)
     ASSERT(TRX_STATUS_TX_ARET_ON == bitRead(SR_TRX_STATUS));
 
     // Read TRAC status 
-    trac = bitRead(SR_TRAC_STATUS);
+    txBuffer.trac = bitRead(SR_TRAC_STATUS);
 #else
     RTIMER_BUSYWAIT_UNTIL(flags.TRX_END, US_TO_RTIMERTICKS(4096)); //Max transmit time
     ASSERT(TRX_STATUS_TX_ON == bitRead(SR_TRX_STATUS));
@@ -528,7 +555,7 @@ rf2xx_transmit(unsigned short transmit_len)
 
     flags.PLL_LOCK = 1;
 
-	switch (trac) {
+	switch (txBuffer.trac) {
         case TRAC_SUCCESS:
             RF2XX_STATS_COUNT(txSuccess);
 			LOG_DBG("TRAC=OK\n");
@@ -558,13 +585,24 @@ rf2xx_send(const void *payload, unsigned short payload_len)
 	return rf2xx_transmit(payload_len);
 }
 
-// What if we read frame inside interrupt
+
 int rf2xx_read(void *buf, unsigned short buf_len)
+{
+    uint8_t frame_size = rxBuffer.buf_len;
+    memcpy(buf, rxBuffer.buf, rxBuffer.buf_len);
+    rxBuffer.valid = 0;
+    rxBuffer.buf_len = 0;
+
+    return frame_size;
+}
+
+// What if we read frame inside interrupt
+int frameRead(void)
 {
     uint8_t dummy __attribute__((unused));
     vsnSPI_ErrorStatus status;
-    uint8_t payload_len = 0;
-    uint16_t tx_crc;
+    //uint8_t payload_len = 0;
+    //uint16_t crc;
 
     LOG_DBG("%s\n", __func__);
 
@@ -572,42 +610,53 @@ int rf2xx_read(void *buf, unsigned short buf_len)
     flags.AMI = 0;
     flags.TRX_END = 0;
 
+    // Check if control over SPI has already been taken
+    ASSERT(0 == getCS());
+
+    // Clear chip select (just in case)
     status = clearCS();
     if (VSN_SPI_SUCCESS != status) return 0;
 
+    // Trigger communication with radio chip
     status = setCS();
     if (VSN_SPI_SUCCESS != status) return 0;
 
+    // Inform about frame read
     status = vsnSPI_pullByteTXRX(rf2xxSPI, (CMD_FB | CMD_READ), &dummy);
     if (VSN_SPI_SUCCESS != status) return 0;
 
-    status = vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, &payload_len);
+    // Get information about frame size
+    status = vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, &rxBuffer.buf_len);
     if (VSN_SPI_SUCCESS != status) return 0;
 
-    payload_len -= RF2XX_CRC_SIZE; // Don't count in 2 CRC bytes
-
-    if (payload_len > buf_len) {
+    // Check if frame has valid size
+    if (rxBuffer.buf_len < 3 && rxBuffer.buf_len > RF2XX_MAX_FRAME_SIZE) {
         clearCS();
-        LOG_ERR("Frame too big for buffer (%u > %u)\n", payload_len, buf_len);
+
+        LOG_ERR("Invalid frame size (%u < %u < %u)\n", 3, rxBuffer.buf_len, RF2XX_MAX_FRAME_SIZE);
+        rxBuffer.buf_len = 0;
+
         return 0;
     }
 
-    for (int i = 0; i < payload_len; i++) {
-        status = vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, buf + i);
+    rxBuffer.buf_len -= RF2XX_CRC_SIZE; // Don't count in 2 CRC bytes
+
+    for (uint8_t i = 0; i < rxBuffer.buf_len; i++) {
+        status = vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, rxBuffer.buf + i);
         if (VSN_SPI_SUCCESS != status) return 0;
     }
 
-    status = vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, (uint8_t *)&tx_crc);
+    status = vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, (uint8_t *)&rxBuffer.crc);
     if (VSN_SPI_SUCCESS != status) return 0;
 
-    status = vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, (uint8_t *)&tx_crc + 1);
+    status = vsnSPI_pullByteTXRX(rf2xxSPI, 0x00, (uint8_t *)&rxBuffer.crc + 1);
     if (VSN_SPI_SUCCESS != status) return 0;
 
 #if !RF2XX_CONF_CHECKSUM
     {
-        uint16_t rx_crc = crc16_data(buf, payload_len, 0x00);
-        ASSERT(tx_crc == rx_crc);
-        if (tx_crc != rx_crc) {
+        uint16_t crc = crc16_data(rxBuffer.buf, rxBuffer.buf_len, 0x00);
+        ASSERT(crc == rxbuffer.crc);
+        if (crc == rxbuffer.crc) {
             clearCS();
             return 0;
         }
@@ -631,9 +680,10 @@ int rf2xx_read(void *buf, unsigned short buf_len)
 #endif
 
 #if RX_AACK_MODE
-    uint8_t trac = bitRead(SR_TRAC_STATUS);
+    rxBuffer.trac = bitRead(SR_TRAC_STATUS);
+
     // Read TRAC status either if it is not mandatory (mainly for debugging)
-    switch (trac) {
+    switch (rxBuffer.trac) {
         case TRAC_SUCCESS:
             // Everything is OK. CRC matches.
             LOG_DBG("TRAC=OK\n");
@@ -658,7 +708,7 @@ int rf2xx_read(void *buf, unsigned short buf_len)
     }
 #endif
 
-    return payload_len;
+    return rxBuffer.buf_len;
 }
 
 
@@ -702,8 +752,10 @@ rf2xx_channel_clear(void)
 int // Check if the radio driver is currently receiving a packet 
 rf2xx_receiving_packet(void)
 {
+    return 0; // Things are handled in interrupt
+
     //LOG_DBG("%s\n", __func__);
-    return flags.RX_START && !flags.TRX_END;
+    //return flags.RX_START && !flags.TRX_END;
 
 /*
 #if POLLING_MODE
@@ -726,6 +778,9 @@ rf2xx_receiving_packet(void)
 int // Check if the radio driver has just received a packet 
 rf2xx_pending_packet(void)
 {
+    return rxBuffer.valid;
+
+
     LOG_DBG("%s\n", __func__);
     
     //return flags.RX_START && flags.TRX_END;
@@ -831,6 +886,8 @@ rf2xx_isr(void)
         flags.TRX_END = 0;
 
         RF2XX_STATS_COUNT(rxDetected);
+
+        frameRead();
     }
 
     if (irq.IRQ5_AMI) {
@@ -847,7 +904,9 @@ rf2xx_isr(void)
 
         if (flags.RX_START) {
             rf2xx_last_packet_timestamp = RTIMER_NOW();
-            process_poll(&rf2xx_process);
+            rxBuffer.valid = 1;
+
+            //process_poll(&rf2xx_process);
  
             RF2XX_STATS_COUNT(rxSuccess);
         } else {
@@ -874,7 +933,7 @@ PROCESS_THREAD(rf2xx_process, ev, data)
 	LOG_INFO("AT86RF2xx driver process started!\n");
 
 	while(1) {
-		PROCESS_YIELD_UNTIL(!POLLING_MODE && ev == PROCESS_EVENT_POLL);
+		PROCESS_YIELD_UNTIL(!POLLING_MODE && (rf2xx_pending_packet() || ev == PROCESS_EVENT_POLL));
         //PROCESS_YIELD_UNTIL(rf2xx_pending_packet());
         RF2XX_STATS_COUNT(rxToStack);
         LOG_DBG("calling receiver callback\n");
