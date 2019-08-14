@@ -8,6 +8,8 @@
 // See rtimer-arch.c for explanation why such value
 #define RTIMER_ARCH_SECOND		(65536)
 
+#define RTIMER_ARCH_PPM         (594 + 1500)
+
 // Converts micro seconds to rtimer ticks (65536 ticks/s ---> 1us = 0.065536 tick)
 // Eqn.: T = (us * 0.065536) +- 1/2
 #define US_TO_RTIMERTICKS(us)   ((us) >= 0 ? \

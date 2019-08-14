@@ -178,6 +178,7 @@ extern int32_t min_drift_seen;
 extern int32_t max_drift_seen;
 /* The TSCH standard 10ms timeslot timing */
 extern const tsch_timeslot_timing_usec tsch_timeslot_timing_us_10000;
+extern const tsch_timeslot_timing_usec tsch_timeslot_timing_us_20000;
 
 /* TSCH processes */
 PROCESS_NAME(tsch_process);

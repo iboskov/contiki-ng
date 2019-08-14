@@ -771,23 +771,8 @@ rf2xx_channel_clear(void)
 int // Check if the radio driver is currently receiving a packet 
 rf2xx_receiving_packet(void)
 {
-
-        uint8_t trxState = bitRead(SR_TRX_STATUS);
-    switch (trxState) {
-        case TRX_STATUS_BUSY_RX:
-        case TRX_STATUS_BUSY_RX_AACK:
-        case TRX_STATUS_BUSY_RX_AACK_NOCLK:
-            return 1;
-
-        default:
-            return 0;
-    }
-
-
-    //return 0; // Things are handled in interrupt
-
     //LOG_DBG("%s\n", __func__);
-    //return flags.RX_START && !flags.TRX_END;
+    return flags.RX_START && !flags.TRX_END;
 
 /*
 #if POLLING_MODE
@@ -815,26 +800,17 @@ rf2xx_pending_packet(void)
         LOG_INFO("----Pending packet with %u bytes\n", rxBuffer.buf_len);   //brisi
     }
     return rxBuffer.buf_len != 0;
-
-
     
-    /*if(flags.RX_START){
-        LOG_INFO("Pedning --> RX_START\n");
-    }
-    if(flags.TRX_END){
-        LOG_INFO("Pedning --> TRX_END\n");
-    }*/
-    //return flags.RX_START && flags.TRX_END;
-
+    /*
     if(flags.TRX_END && flags.RX_START){
         flags.TRX_END = 0;
         flags.RX_START = 0;
-    //    rf2xx_last_packet_timestamp = RTIMER_NOW();
         return 1;
     }
     else{
         return 0;
     }
+    */
 }
 
 
@@ -890,11 +866,11 @@ rf2xx_off(void)
     }
 
     if (!rf2xx_receiving_packet()) {
-        /*
+    /*
         regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
         BUSYWAIT_UNTIL(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
         ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
-*/
+    */
         // In polling mode we should't erase RX_START and TRX_END flags
         #if POLLING_MODE
             flags.PLL_LOCK  = 0;     
