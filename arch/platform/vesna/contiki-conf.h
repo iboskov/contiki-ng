@@ -23,6 +23,7 @@
 // Platform specific timer bit-size
 // STM32F103 has 16-bit counter
 #define RTIMER_CONF_CLOCK_SIZE  (2)
+#define RTIMER_CONF_GUARD_TIME  (7)
 
 typedef uint64_t clock_time_t;
 typedef uint32_t uip_stats_t;

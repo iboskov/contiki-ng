@@ -22,6 +22,9 @@
 #include "stm32f10x_rcc.h"
 #include "stm32f10x_tim.h"
 
+#include "sys/log.h"
+#define LOG_MODULE "rf2xx"
+#define LOG_LEVEL 4
 
 #define RTIMER_TIMx TIM5
 #define RTIMER_IRQn TIM5_IRQn

@@ -20,6 +20,7 @@
 #include "rf2xx.h"
 #include "rf2xx_arch.h"
 
+#include "int-master.h"
 
 #define LOG_MODULE "rf2xx"
 #define LOG_LEVEL LOG_CONF_LEVEL_RF2XX
@@ -65,9 +66,9 @@
 
 #define TX_ARET_MODE    (0)
 #define RX_AACK_MODE    (0)
-#define POLLING_MODE    (0)
-#define AUTO_CCA        (1) // Do we manually perform CCA?
-#define ADDR_FILTER     (1)
+#define POLLING_MODE    (1)
+#define AUTO_CCA        (0) // Do we manually perform CCA?
+#define ADDR_FILTER     (0)
 
 #define TX_TIME_CRITICAL (1) // Trigger transmit while still transfering to frame buffer
 
@@ -84,7 +85,12 @@ volatile uint32_t rf2xxStats[RF2XX_STATS_COUNT] = { 0 };
 
 // SRC: https://barrgroup.com/Embedded-Systems/How-To/Define-Assert-Macro
 #define ASSERT(expr) ({ if (!(expr)) LOG_ERR("Err: " #expr "\n"); })
+#define ASSERT_EQUAL(x, y)  ({ if (x != y) LOG_ERR("Err: " #x " != " #y ", %i != %i", x, y); })
 
+
+
+//#define ASSERT(expr)    ({ })
+//#define ASSERT_EQUAL(x, y)    ({ })
 
 #define BUSYWAIT_UNTIL(expr)    ({ while(!(expr)); })
 
@@ -94,7 +100,6 @@ typedef struct {
     uint8_t buf_len; // in case of size == 0 frame is invalid
     uint16_t crc;
     uint8_t trac;
-    uint8_t valid;
     // rtimer_clock_t timestamp;
 } rf2xx_frame;
 
@@ -114,7 +119,6 @@ volatile rtimer_clock_t rf2xx_last_packet_timestamp;
 
 
 volatile static rf2xx_flags_t flags;
-
 
 // SPI struct (from VESNA drivers) and constant (immutable) pointer to it.
 static vsnSPI_CommonStructure SPI_rf2xxStructure;
@@ -254,7 +258,7 @@ rf2xx_reset(void)
 	bitWrite(SR_TX_AUTO_CRC_ON, RF2XX_CONF_CHECKSUM);
 
 	// Enable RX_SAFE mode to protect buffer while reading it
-	bitWrite(SR_RX_SAFE_MODE, 1);
+	//bitWrite(SR_RX_SAFE_MODE, 1);
 
 	// Set same value for RF231 (default=0) and RF233 (default=1)
 	bitWrite(SR_IRQ_MASK_MODE, 1);
@@ -446,10 +450,10 @@ int
 rf2xx_transmit(unsigned short transmit_len)
 {
     uint8_t dummy __attribute__((unused));
-    //uint8_t trac = TRAC_SUCCESS;
     vsnSPI_ErrorStatus status = VSN_SPI_SUCCESS;
 
-    LOG_DBG("%s\n", __func__);
+    //LOG_INFO("%s\n", __func__);
+    LOG_INFO(" ----Transmit %u bytes \n", transmit_len);
 
     // Force radio into TRX_OFF mode
     regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
@@ -464,10 +468,13 @@ rf2xx_transmit(unsigned short transmit_len)
 
 #if TX_ARET_MODE
     regWrite(RG_TRX_STATE, TRX_CMD_TX_ARET_ON);
+    //BUSYWAIT_UNTIL(flags.PLL_LOCK);
+
     BUSYWAIT_UNTIL(TRX_STATUS_TX_ARET_ON == bitRead(SR_TRX_STATUS));
-    ASSERT(TRX_STATUS_TX_ARET_ON == bitRead(SR_TRX_STATUS));
+    ASSERT_EQUAL(TRX_STATUS_TX_ARET_ON, bitRead(SR_TRX_STATUS));
 #else
     regWrite(RG_TRX_STATE, TRX_CMD_TX_ON);
+    //BUSYWAIT_UNTIL(flags.PLL_LOCK);
     BUSYWAIT_UNTIL(TRX_STATUS_TX_ON == bitRead(SR_TRX_STATUS));
     ASSERT(TRX_STATUS_TX_ON == bitRead(SR_TRX_STATUS));
 #endif
@@ -534,26 +541,35 @@ rf2xx_transmit(unsigned short transmit_len)
     // Read TRAC status 
     txBuffer.trac = bitRead(SR_TRAC_STATUS);
 #else
-    RTIMER_BUSYWAIT_UNTIL(flags.TRX_END, US_TO_RTIMERTICKS(4096)); //Max transmit time
+    BUSYWAIT_UNTIL(flags.TRX_END);
     ASSERT(TRX_STATUS_TX_ON == bitRead(SR_TRX_STATUS));
+    txBuffer.trac = TRAC_SUCCESS;
 #endif
     
     ENERGEST_OFF(ENERGEST_TYPE_TRANSMIT);
 
-    // Migrate to RX mode
-#if RX_AACK_MODE
-    regWrite(RG_TRX_STATE, TRX_CMD_RX_AACK_ON);
-    BUSYWAIT_UNTIL(TRX_STATUS_RX_AACK_ON == bitRead(SR_TRX_STATUS));
-    ASSERT(TRX_STATUS_RX_AACK_ON == bitRead(SR_TRX_STATUS));
-#else
-    regWrite(RG_TRX_STATE, TRX_CMD_RX_ON);
-    BUSYWAIT_UNTIL(TRX_STATUS_RX_ON == bitRead(SR_TRX_STATUS));
-    ASSERT(TRX_STATUS_RX_ON == bitRead(SR_TRX_STATUS));
-#endif
+//#if !POLLING_MODE
+        // Migrate to RX mode
+    #if RX_AACK_MODE
+        regWrite(RG_TRX_STATE, TRX_CMD_RX_AACK_ON);
+        BUSYWAIT_UNTIL(TRX_STATUS_RX_AACK_ON == bitRead(SR_TRX_STATUS));
+        ASSERT(TRX_STATUS_RX_AACK_ON == bitRead(SR_TRX_STATUS));
+    #else
+        regWrite(RG_TRX_STATE, TRX_CMD_RX_ON);
+        BUSYWAIT_UNTIL(TRX_STATUS_RX_ON == bitRead(SR_TRX_STATUS));
+        ASSERT(TRX_STATUS_RX_ON == bitRead(SR_TRX_STATUS));
+    #endif
 
+//#endif
+
+flags.PLL_LOCK = 1;
+
+/*
+    regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
+    BUSYWAIT_UNTIL(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
+    ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
+*/
     ENERGEST_ON(ENERGEST_TYPE_LISTEN);
-
-    flags.PLL_LOCK = 1;
 
 	switch (txBuffer.trac) {
         case TRAC_SUCCESS:
@@ -572,7 +588,7 @@ rf2xx_transmit(unsigned short transmit_len)
             return RADIO_TX_COLLISION;
 
         default:
-            LOG_DBG("TRAC=invalid (%u)\n", trac);
+            LOG_DBG("TRAC=invalid (%u)\n", txBuffer.trac);
             return RADIO_TX_ERR;
 	}
 }
@@ -588,12 +604,22 @@ rf2xx_send(const void *payload, unsigned short payload_len)
 
 int rf2xx_read(void *buf, unsigned short buf_len)
 {
-    uint8_t frame_size = rxBuffer.buf_len;
-    memcpy(buf, rxBuffer.buf, rxBuffer.buf_len);
-    rxBuffer.valid = 0;
-    rxBuffer.buf_len = 0;
+    //LOG_INFO("%s\n", __func__);
+    LOG_INFO("----Read %u (%u) bytes from buff \n", rxBuffer.buf_len, buf_len); //brisi
+    
+    if(rxBuffer.buf_len == 0){
+        return 0;
+    }
+    else{
+        __disable_irq();
+        uint8_t frame_size = rxBuffer.buf_len;
+        memcpy(buf, rxBuffer.buf, rxBuffer.buf_len);
+        rxBuffer.buf_len = 0;
+        __enable_irq();
+        LOG_DBG("Got %u bytes\n", frame_size);
 
-    return frame_size;
+        return frame_size;
+    }
 }
 
 // What if we read frame inside interrupt
@@ -630,7 +656,7 @@ int frameRead(void)
     if (VSN_SPI_SUCCESS != status) return 0;
 
     // Check if frame has valid size
-    if (rxBuffer.buf_len < 3 && rxBuffer.buf_len > RF2XX_MAX_FRAME_SIZE) {
+    if (rxBuffer.buf_len < 3 || rxBuffer.buf_len > RF2XX_MAX_FRAME_SIZE) {
         clearCS();
 
         LOG_ERR("Invalid frame size (%u < %u < %u)\n", 3, rxBuffer.buf_len, RF2XX_MAX_FRAME_SIZE);
@@ -703,10 +729,12 @@ int frameRead(void)
 
         default:
             // Any other state is invalid in RX mode
-            LOG_DBG("TRAC=invalid (%u)\n", trac);
+            LOG_DBG("TRAC=invalid (%u)\n", rxBuffer.trac);
             return 0;
     }
 #endif
+
+    LOG_INFO("----Frame read %u bytes \n", rxBuffer.buf_len);   //brisi
 
     return rxBuffer.buf_len;
 }
@@ -720,29 +748,20 @@ rf2xx_channel_clear(void)
 #if TX_ARET_MODE || AUTO_CCA
     return 1;
 #else
-    regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
-    BUSYWAIT_UNTIL(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
-    ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
 
-    flags.value = 0;
+    rf2xx_on();
 
 	bitWrite(SR_RX_PDT_DIS, 1); // disable reception
-	regWrite(RG_TRX_STATE, TRX_CMD_RX_ON);
-    BUSYWAIT_UNTIL(TRX_STATUS_RX_ON == bitRead(SR_TRX_STATUS));
-    ASSERT(TRX_STATUS_RX_ON == bitRead(SR_TRX_STATUS));
 
     bitWrite(SR_CCA_REQUEST, 1); // trigger CCA sensing
-    BUSYWAIT_UNTIL(1 == bitRead(SR_CCA_DONE));
-
+    BUSYWAIT_UNTIL(flags.CCA);
+    
     uint8_t cca = bitRead(SR_CCA_STATUS); // 1 = IDLE, 0 = BUSY
 
-    regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
-    BUSYWAIT_UNTIL(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
-    ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
-
-    flags.value = 0;
+    flags.CCA = 0;
 
 	bitWrite(SR_RX_PDT_DIS, 0); // Enable reception
+
 
     return cca;
 #endif
@@ -752,7 +771,20 @@ rf2xx_channel_clear(void)
 int // Check if the radio driver is currently receiving a packet 
 rf2xx_receiving_packet(void)
 {
-    return 0; // Things are handled in interrupt
+
+        uint8_t trxState = bitRead(SR_TRX_STATUS);
+    switch (trxState) {
+        case TRX_STATUS_BUSY_RX:
+        case TRX_STATUS_BUSY_RX_AACK:
+        case TRX_STATUS_BUSY_RX_AACK_NOCLK:
+            return 1;
+
+        default:
+            return 0;
+    }
+
+
+    //return 0; // Things are handled in interrupt
 
     //LOG_DBG("%s\n", __func__);
     //return flags.RX_START && !flags.TRX_END;
@@ -778,16 +810,26 @@ rf2xx_receiving_packet(void)
 int // Check if the radio driver has just received a packet 
 rf2xx_pending_packet(void)
 {
-    return rxBuffer.valid;
+    //LOG_INFO("%s\n", __func__);
+    if(rxBuffer.buf_len != 0){
+        LOG_INFO("----Pending packet with %u bytes\n", rxBuffer.buf_len);   //brisi
+    }
+    return rxBuffer.buf_len != 0;
 
 
-    LOG_DBG("%s\n", __func__);
     
+    /*if(flags.RX_START){
+        LOG_INFO("Pedning --> RX_START\n");
+    }
+    if(flags.TRX_END){
+        LOG_INFO("Pedning --> TRX_END\n");
+    }*/
     //return flags.RX_START && flags.TRX_END;
-    
+
     if(flags.TRX_END && flags.RX_START){
         flags.TRX_END = 0;
         flags.RX_START = 0;
+    //    rf2xx_last_packet_timestamp = RTIMER_NOW();
         return 1;
     }
     else{
@@ -799,7 +841,7 @@ rf2xx_pending_packet(void)
 int
 rf2xx_on(void)
 {
-    //LOG_DBG("%s\n", __func__);
+    LOG_DBG("%s\n", __func__);
 
     uint8_t state = bitRead(SR_TRX_STATUS);
     if( (state == TRX_STATUS_RX_ON) || (state == TRX_STATUS_RX_AACK_ON)){
@@ -843,10 +885,16 @@ rf2xx_off(void)
 {
     LOG_DBG("%s\n", __func__);
 
-    regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
-    BUSYWAIT_UNTIL(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
-    ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
+    if( TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS)){
+        return 1;
+    }
 
+    if (!rf2xx_receiving_packet()) {
+        /*
+        regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
+        BUSYWAIT_UNTIL(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
+        ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
+*/
         // In polling mode we should't erase RX_START and TRX_END flags
         #if POLLING_MODE
             flags.PLL_LOCK  = 0;     
@@ -857,9 +905,11 @@ rf2xx_off(void)
         #else
             flags.value = 0;
         #endif
+
         ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
 
-    ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
+        return 1;
+    }
 
     return 0;
 }
@@ -881,13 +931,20 @@ rf2xx_isr(void)
     }
 
     if (irq.IRQ2_RX_START) {
+        if(flags.RX_START){
+            LOG_INFO("RX_START allready on...");
+        }
+
         flags.RX_START = 1;
         flags.AMI = 0;
         flags.TRX_END = 0;
+        LOG_INFO("RX_START irq\n");
 
-        RF2XX_STATS_COUNT(rxDetected);
+        //RF2XX_STATS_COUNT(rxDetected);
 
-        frameRead();
+        //__disable_irq();
+        //frameRead();
+        //__enable_irq();
     }
 
     if (irq.IRQ5_AMI) {
@@ -901,12 +958,16 @@ rf2xx_isr(void)
 
     if (irq.IRQ3_TRX_END) {
         flags.TRX_END = 1;
-
+        //LOG_INFO("TRX_END irq\n");
         if (flags.RX_START) {
+            __disable_irq();
             rf2xx_last_packet_timestamp = RTIMER_NOW();
-            rxBuffer.valid = 1;
+            //ASSERT_EQUAL(rxBuffer.buf_len, 0);
+            LOG_INFO("Buffer length : %u\n ", rxBuffer.buf_len);        //brisi
+            frameRead();
+            __enable_irq();
 
-            //process_poll(&rf2xx_process);
+            process_poll(&rf2xx_process);
  
             RF2XX_STATS_COUNT(rxSuccess);
         } else {
@@ -933,10 +994,10 @@ PROCESS_THREAD(rf2xx_process, ev, data)
 	LOG_INFO("AT86RF2xx driver process started!\n");
 
 	while(1) {
-		PROCESS_YIELD_UNTIL(!POLLING_MODE && (rf2xx_pending_packet() || ev == PROCESS_EVENT_POLL));
+		PROCESS_YIELD_UNTIL(!POLLING_MODE && ev == PROCESS_EVENT_POLL);
         //PROCESS_YIELD_UNTIL(rf2xx_pending_packet());
         RF2XX_STATS_COUNT(rxToStack);
-        LOG_DBG("calling receiver callback\n");
+        //LOG_INFO("calling receiver callback\n");
 
         packetbuf_clear();
         packetbuf_set_attr(PACKETBUF_ATTR_TIMESTAMP, rf2xx_last_packet_timestamp);
@@ -1232,6 +1293,8 @@ regRead(uint8_t addr)
         status = clearCS();
         if (VSN_SPI_SUCCESS != status) continue;
 
+        __disable_irq();
+
         status = setCS();
         if (VSN_SPI_SUCCESS != status) continue;
 
@@ -1243,6 +1306,8 @@ regRead(uint8_t addr)
 
         status = clearCS();
         ASSERT(VSN_SPI_SUCCESS == status);
+
+        __enable_irq();
 
         break;
     }
@@ -1262,6 +1327,8 @@ regWrite(uint8_t addr, uint8_t value)
         status = clearCS();
         if (VSN_SPI_SUCCESS != status) continue;
 
+        __disable_irq();
+
         status = setCS();
         if (VSN_SPI_SUCCESS != status) continue;
 
@@ -1273,6 +1340,9 @@ regWrite(uint8_t addr, uint8_t value)
 
         status = clearCS();
         ASSERT(VSN_SPI_SUCCESS == status);
+
+        __enable_irq();
+
         break;
     }
 }

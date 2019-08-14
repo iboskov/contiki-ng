@@ -14,7 +14,7 @@
 
 // the delay between radio Tx request and SFD sent, in rtimer ticks
 // This includes (FORCE_TRX_OFF, TX_ARET/PLL_ON, delay, PREAMBLE+SFD (p.39))
-#define RF2XX_DELAY_BEFORE_TX		((unsigned)US_TO_RTIMERTICKS(500))          //TODO: if value below 500 got !dl-miss TxBeforeAck
+#define RF2XX_DELAY_BEFORE_TX		((unsigned)US_TO_RTIMERTICKS(400))          //TODO: if value below 500 got !dl-miss TxBeforeAck
 // * FORCE_TRX_OFF        - 1us
 // * TRX_OFF -> PLL_ON    - 110us
 // * PLL_ON -> BUSY_RX    - 16us
@@ -23,21 +23,21 @@
 
 // the delay between radio Rx request and start listening, in rtimer ticks
 // (we need time from end of Tx until it reaches Rx mode again)
-#define RF2XX_DELAY_BEFORE_RX		((unsigned)US_TO_RTIMERTICKS(350))   
+#define RF2XX_DELAY_BEFORE_RX		((unsigned)US_TO_RTIMERTICKS(120))   
 // * PLL_ON -> RX_ON      - 1us
 // * Time until PLL_LOCK                  // Even if the registerbits TRX_STATUS indicates RX_ON
 //   should occur         - 32us          // actual frame reception canonly start once the PLL has locked.
 // * PLL settling time                    
-//   on chanel switch     - 11us          
+//   on chanel switch     - (11us)          
 // * TRX_OFF -> RX_ON     - 110us         // when rf2xx_on is called
-//                        = 154us
+//                        = 114us
 
 // The number of header and footer bytes of overhead at the PHY layer after SFD
 #define RF2XX_PHY_OVERHEAD			(3) 
 // * 1 length byte + 2 bytes CRC
 
 // the delay between the end of SFD reception and the radio returning 1 to receiving_packet()
-#define RF2XX_DELAY_BEFORE_DETECT	((unsigned)US_TO_RTIMERTICKS(50)) 
+#define RF2XX_DELAY_BEFORE_DETECT	((unsigned)US_TO_RTIMERTICKS(100)) 
 // * RX_START flag
 //   interrupt latency    - 9us
 // * PHR reception        - 32us
@@ -59,7 +59,9 @@
  
 
 // (optional) the default TSCH timeslot timing (10ms timeslots)
-//#define RF2XX_CONF_DEFAULT_TIMESLOT_TIMING	(tsch_timeslot_timing_us_10000)
+#define RF2XX_CONF_DEFAULT_TIMESLOT_TIMING	(tsch_timeslot_timing_us_10000)
+
+
 
 
 #endif
