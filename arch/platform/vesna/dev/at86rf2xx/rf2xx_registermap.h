@@ -76,14 +76,14 @@ enum {
 
 
 enum {
-	CLKM_DISABLED		= 0,
-	CLKM_1MHz			= 1,
-	CLKM_2MHz			= 2,
-	CLKM_4MHz			= 3,
-	CLKM_8MHz			= 4,
-	CLKM_16MHz			= 5,
-	CLKM_250kHz			= 6,
-	CLKM_62_5kHz		= 7,
+	CLKM_CTRL__DISABLED		= 0,
+	CLKM_CTRL__1MHz			= 1,
+	CLKM_CTRL__2MHz			= 2,
+	CLKM_CTRL__4MHz			= 3,
+	CLKM_CTRL__8MHz			= 4,
+	CLKM_CTRL__16MHz		= 5,
+	CLKM_CTRL__250kHz		= 6,
+	CLKM_CTRL__62_5kHz		= 7,
 };
 
 
@@ -228,6 +228,15 @@ enum {
 #define SR_BATMON_HR			RG_BATMON, 0x10, 4
 #define SR_BATMON_OK			RG_BATMON, 0x20, 5
 #define SR_RESERVED_11_6		RG_BATMON, 0xC0, 6
+
+#define RG_XOSC_CTRL			(0x12)
+#define SR_XTAL_TRIM			RG_XOSC_CTRL, 0x0F, 0
+#define SR_XTAL_MODE			RG_XOSC_CTRL, 0xF0, 4
+
+enum {
+	XTAL_MODE__INTERNAL_OSC		= 0xF,
+	XTAL_MODE__EXTERNAL_OSC		= 0x4,
+}
 
 
 #define RG_CC_CTRL_0			(0x13) // RF212-only register

@@ -251,14 +251,17 @@ rf2xx_reset(void)
 	// CLKM clock change visible immediately
 	bitWrite(SR_CLKM_SHA_SEL, 0);
 
-	// disable CLKM (as output)
-	bitWrite(SR_CLKM_CTRL, CLKM_DISABLED);
+	// Enable CLKM (as output) so it can be used as external clock source for VESNA
+	bitWrite(SR_CLKM_CTRL, CLKM_CTRL__8MHz);
+
+    // Enable use of external oscilator
+    bitWrite(SR_XTAL_MODE, XTAL_MODE__EXTERNAL_OSC);
 
 	// Enable/disable Tx autogenerating CRC16/CCITT
 	bitWrite(SR_TX_AUTO_CRC_ON, RF2XX_CONF_CHECKSUM);
 
 	// Enable RX_SAFE mode to protect buffer while reading it
-	//bitWrite(SR_RX_SAFE_MODE, 1);
+	bitWrite(SR_RX_SAFE_MODE, 1);
 
 	// Set same value for RF231 (default=0) and RF233 (default=1)
 	bitWrite(SR_IRQ_MASK_MODE, 1);
