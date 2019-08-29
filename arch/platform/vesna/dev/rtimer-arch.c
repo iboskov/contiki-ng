@@ -22,92 +22,87 @@
 #include "stm32f10x_rcc.h"
 #include "stm32f10x_tim.h"
 
-#include "sys/log.h"
-#define LOG_MODULE "rf2xx"
-#define LOG_LEVEL 4
-
 #define RTIMER_TIMx TIM5
 #define RTIMER_IRQn TIM5_IRQn
 #define RTIMER_APB1 RCC_APB1Periph_TIM5
 
-
-//volatile uint32_t overflow = 0;
-
-
-uint32_t rtimer_arch_us_to_rtimerticks(int32_t us) {
-    uint32_t ticks = (abs(us) * 64) / 1000;
-    //if (ticks > 64000) ticks -= 64000;
-    //printf("%luus -> %luticks\n", us, ticks);
-    return ticks;
-}
-
-uint32_t rtimer_arch_rtimerticks_to_us(int32_t ticks) {
-    uint32_t us = (abs(ticks) * 15625) / 1000;
-    //printf("%luticks -> %luus\n", ticks, us);
-    return us;
-}
-
 /*
     Contiki(-ng) uses several timers. We implemented rtimer (r is for real-time)
-    using TIM5 general purpose timer found.
+    using TIM5 general purpose timer.
 
     TIM5 properties:
         - 16-bit up/down counter,
         - interrupt can be triggered on overflow or specific value,
 
-    (optional) It is possible to bring in external clock from a AT86RF2xx radio,
-    which is suppose to be more stable.
+    Our goal is to get >= 32kHz triggers (see tsch-slot-operation.c). We set goal to have 64kHz triggers.
 
-    When VESNA is running on internal scilator at 64MHz, the TIM5 receives
-    gets 64MHz clock. Our goal is to get >= 32kHz triggers (see tsch-slot-operation.c)
-    We set goal to have 64kHz triggers.
+    Internal clock of STM32 is drifting a lot - too much for precise TSCH operations. This presents a 
+    problem, because our devices are mising the slots. So we have 2 options:
 
-    So the equation is:
-        event [Hz] = TIMx_CLK / ((PRSC + 1) * (PERIOD + 1))
+    1) When we are using SNR board, we can use AT86RF2xx oscilator clock as main clock for STM32, which has
+       very low drift (configured in platform.c).
+
+    2) When we are using ISMTV board, AT86RF2xx CLK pin is not connected anywhere. But we can use oscilator
+       of CC1101 chip, which is connected to TIM5 Channel 3 (PA2 on STM32). So only TIM5 will have external 
+       clock source, which is not drifting.
 */
 
 void rtimer_arch_init(void) {
 
-    TIM_TimeBaseInitTypeDef timerInitStructure = {
-        .TIM_Prescaler = 977 - 1, // 0 = run @ 64MHz, 63 = run at 1MHz; 999 = run at 64kHz | 977 = run at 65506 Hz
-        .TIM_CounterMode = TIM_CounterMode_Up,
-        .TIM_Period = 0xFFFF - 1, // upper bound value of counter (65536)
-        .TIM_ClockDivision = TIM_CKD_DIV1,
-        .TIM_RepetitionCounter = 0, // Not available on TIM5 anyway
-    };
-
-
     // TIM5 clock enable
     RCC_APB1PeriphClockCmd(RTIMER_APB1, ENABLE);
 
-    // Disable to configure it
-    TIM_Cmd(RTIMER_TIMx, DISABLE);
+    #if AT86RF2XX_BOARD_ISMTV_V1_1
 
-    // Initialize timer
-    TIM_TimeBaseInit(RTIMER_TIMx, &timerInitStructure);
+        TIM_TimeBaseInitTypeDef externalTimerInitStructure = {
+            .TIM_Prescaler = 206 - 1,       // 0 = run @ 13.5MHz, 206 = run @ 65533.98 Hz
+            .TIM_CounterMode = TIM_CounterMode_Up,
+            .TIM_Period = 65533, // upper bound value of counter (65536) (same as RTIMER_ARCH_SECOND)
+            .TIM_ClockDivision = TIM_CKD_DIV1,
+            .TIM_RepetitionCounter = 0, // Not available on TIM5 anyway
+        };
 
-    //TIM_PrescalerConfig(TIM5, 1000 - 1, TIM_PSCReloadMode_Immediate);
+        GPIO_InitTypeDef gpioInitStructure = {
+            .GPIO_Pin = GPIO_Pin_2,
+            .GPIO_Mode = GPIO_Mode_IN_FLOATING,
+            .GPIO_Speed = GPIO_Speed_10MHz,
+        };
+        // Initialize timer
+        TIM_TimeBaseInit(RTIMER_TIMx, &externalTimerInitStructure);
+
+         // GPIO clock enable
+        RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE); // Do we need this?
+
+        // Initialize GPIO
+        GPIO_Init(GPIOA, &gpioInitStructure);
+
+        // Connect channel 3 and 2 to channel 1 via XOR gate
+        TIM_SelectHallSensor(RTIMER_TIMx, ENABLE);
+        
+        // Setup timer trigger as external clock source
+        TIM_TIxExternalClockConfig(RTIMER_TIMx, TIM_TIxExternalCLK1Source_TI1, TIM_ICPolarity_Falling, 0x0);
+    #else
+
+        TIM_TimeBaseInitTypeDef timerInitStructure = {
+            .TIM_Prescaler = 977 - 1,       // 0 = run @ 64MHz, 977 = run @ 65506 Hz
+            .TIM_CounterMode = TIM_CounterMode_Up,
+            .TIM_Period = 65503,            // upper bound value of counter (65506) (same as RTIMER_ARCH_SECOND)
+            .TIM_ClockDivision = TIM_CKD_DIV1,
+            .TIM_RepetitionCounter = 0,     // Not available on TIM5 anyway
+        };
+        // Initialize timer
+        TIM_TimeBaseInit(RTIMER_TIMx, &timerInitStructure);
+    #endif
+
 
     // Set initial value (value could be random at power on)
     TIM_SetCounter(RTIMER_TIMx, 0);
 
-    // Not really sure what it is, but is used for PWM usecase. Disable it.
-    //TIM_OC1PreloadConfig(RTIMER_TIM, TIM_OCPreload_Disable);
-
-    //TIM_ARRPreloadConfig(RTIMER_TIM, ENABLE);
-
-    // We are not controlling any pins
-    //TIM_CtrlPWMOutputs(TIM5, DISABLE);
-
     // Disable ALL interrupts from TIM5
     TIM_ITConfig(RTIMER_TIMx, 0xFF, DISABLE);
 
-    //TIM_ITConfig(TIM5, TIM_IT_Update, ENABLE);    // For overflow
-
     // Clear interrupt bit, if it was triggered for some reason
     TIM_ClearITPendingBit(RTIMER_TIMx, TIM_IT_CC1);
-    //TIM_ClearITPendingBit(RTIMER_TIM, TIM_IT_Update);
-
 
     NVIC_InitTypeDef NVIC_InitStructure;
     NVIC_InitStructure.NVIC_IRQChannel = RTIMER_IRQn;
@@ -116,56 +111,9 @@ void rtimer_arch_init(void) {
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 
-    /*
-    TIM_OCInitTypeDef tim_oc2_init;
-    tim_oc2_init.TIM_OCMode = TIM_OCMode_Timing;
-    tim_oc2_init.TIM_OCPolarity = TIM_OCPolarity_High;
-    tim_oc2_init.TIM_Pulse = 0; // To be compared against
-    tim_oc2_init.TIM_OutputState = TIM_OutputState_Disable;
-
-    TIM_OC1Init(RTIMER_TIM, &tim_oc2_init);
-    TIM_ClearITPendingBit(RTIMER_TIM, TIM_IT_CC2);
-    TIM_ITConfig(RTIMER_TIM, TIM_IT_CC2, ENABLE);
-    */
-
-
-
-    // Enable timer back, since it was configured
+    // Enable timer
     TIM_Cmd(RTIMER_TIMx, ENABLE);
-
-    /*
-    // for real-time counter we will use TIM5 counter.
-    // 16-bit up/down counter.
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM5, ENABLE);
-
-    // Stop it for initialization
-    TIM_Cmd(RTIMER_TIM, DISABLE);
-
-    // Initialization
-    TIM_TimeBaseInitTypeDef tim_TimeBaseStructure;
-    tim_TimeBaseStructure.TIM_Period = 0xFFFF; // Upper limit; max value of 16-bit counter (65536)
-    tim_TimeBaseStructure.TIM_Prescaler = PRESCALER;
-    tim_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1;
-    tim_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
-    tim_TimeBaseStructure.TIM_RepetitionCounter = 0; // we don't care anyway
-
-    TIM_TimeBaseInit(RTIMER_TIM, &tim_TimeBaseStructure);
-
-	TIM_SetCounter(RTIMER_TIM, 0); // Set initial value
-
-	TIM_OC1PreloadConfig(RTIMER_TIM, TIM_OCPreload_Disable);
-
-	TIM_ITConfig(RTIMER_TIM, TIM_IT_CC1, DISABLE);
-
-	TIM_ClearITPendingBit(RTIMER_TIM, TIM_IT_CC1);
-
-    TIM_Cmd(RTIMER_TIM, ENABLE); // Start counting ...
-    */
-
-
-
 }
-
 
 rtimer_clock_t
 rtimer_arch_now(void)
@@ -173,13 +121,11 @@ rtimer_arch_now(void)
     return (rtimer_clock_t)TIM_GetCounter(RTIMER_TIMx);
 }
 
-
 void
 rtimer_arch_schedule(rtimer_clock_t t)
 {
     __disable_irq();
 
-    //printf("NOW=%lu FUT=%lu\n", rtimer_arch_now(), t);
     TIM_ITConfig(RTIMER_TIMx, TIM_IT_CC1, DISABLE);
     TIM_ClearITPendingBit(RTIMER_TIMx, TIM_IT_CC1);
 
@@ -195,40 +141,16 @@ rtimer_arch_schedule(rtimer_clock_t t)
     __enable_irq();
 }
 
-
 void
 contiki_rtimer_isr(void)
 {
-    //if (TIM_GetITStatus(RTIMER_TIMx, TIM_IT_Update) != RESET) {
-    //    TIM_ClearITPendingBit(RTIMER_TIMx, TIM_IT_Update);
-    //    //overflow += 1;
-    //}
-
+    // Comparator 1 trigger
     if (TIM_GetITStatus(RTIMER_TIMx, TIM_IT_CC1) != RESET) {
-        // Comparator 1 trigger
         TIM_ITConfig(RTIMER_TIMx, TIM_IT_CC1, DISABLE);
         TIM_ClearITPendingBit(RTIMER_TIMx, TIM_IT_CC1);
 
         rtimer_run_next();
     }
-
-
-
-
-/*
-    if (TIM_GetITStatus(TIM5, TIM_IT_Update) != RESET) {
-        // Overflow happened
-        TIM_ClearITPendingBit(TIM5, TIM_IT_Update);
-        overflow += 1;
-   }
-*/
-
-    /*if (TIM_GetITStatus(TIM5, TIM_IT_Update) != RESET) {
-        // Disable interrupt. Will be enabled again if needed
-        TIM_ITConfig(TIM5, TIM_IT_CC1, DISABLE);
-        //TIM_ClearITPendingBit(TIM5, TIM_IT_Update);
-        rtimer_run_next();
-    }*/
 }
 
 

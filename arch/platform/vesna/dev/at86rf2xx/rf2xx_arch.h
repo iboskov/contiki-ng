@@ -1,10 +1,6 @@
 #ifndef RF2XX_ARCH_H_
 #define RF2XX_ARCH_H_
 
-
-//#include "rtimer-arch.h"
-
-
 #define RF2XX_MAX_FRAME_SIZE	(127)
 #define RF2XX_MIN_FRAME_SIZE	(3)
 #define RF2XX_CRC_SIZE			(2)
@@ -14,7 +10,7 @@
 
 // the delay between radio Tx request and SFD sent, in rtimer ticks
 // This includes (FORCE_TRX_OFF, TX_ARET/PLL_ON, delay, PREAMBLE+SFD (p.39))
-#define RF2XX_DELAY_BEFORE_TX		((unsigned)US_TO_RTIMERTICKS(250))          //TODO: if value below 500 got !dl-miss TxBeforeAck
+#define RF2XX_DELAY_BEFORE_TX		((unsigned)US_TO_RTIMERTICKS(250))
 // * FORCE_TRX_OFF        - 1us
 // * TRX_OFF -> PLL_ON    - 110us
 // * PLL_ON -> BUSY_RX    - 16us
@@ -23,7 +19,7 @@
 
 // the delay between radio Rx request and start listening, in rtimer ticks
 // (we need time from end of Tx until it reaches Rx mode again)
-#define RF2XX_DELAY_BEFORE_RX		((unsigned)US_TO_RTIMERTICKS(130))   
+#define RF2XX_DELAY_BEFORE_RX		((unsigned)US_TO_RTIMERTICKS(130))
 // * PLL_ON -> RX_ON      - 1us
 // * Time until PLL_LOCK                  // Even if the registerbits TRX_STATUS indicates RX_ON
 //   should occur         - 32us          // actual frame reception canonly start once the PLL has locked.
@@ -37,7 +33,7 @@
 // * 1 length byte + 2 bytes CRC
 
 // the delay between the end of SFD reception and the radio returning 1 to receiving_packet()
-#define RF2XX_DELAY_BEFORE_DETECT	((unsigned)US_TO_RTIMERTICKS(40)) 
+#define RF2XX_DELAY_BEFORE_DETECT	((unsigned)US_TO_RTIMERTICKS(40))
 // * RX_START flag
 //   interrupt latency    - 9us
 // * PHR reception        - 32us
@@ -58,7 +54,8 @@
 // TSCH_CONF_BASE_DRIFT_PPM 549
  
 
-// (optional) the default TSCH timeslot timing (10ms timeslots)
+// TSCH timeslot timing (default is: 10ms tsch_timeslot_timing_us_10000)
 #define RF2XX_CONF_DEFAULT_TIMESLOT_TIMING	(tsch_timeslot_timing_us_20000)
 
+// TODO: migrate "tsch_timeslot_timing_us_20000" into this file
 #endif

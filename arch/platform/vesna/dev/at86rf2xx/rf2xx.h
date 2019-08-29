@@ -6,7 +6,7 @@
 
 // Default log level
 #ifndef LOG_CONF_LEVEL_RF2XX
-#define LOG_CONF_LEVEL_RF2XX            LOG_LEVEL_INFO
+#define LOG_CONF_LEVEL_RF2XX            LOG_LEVEL_WARN
 #endif
 
 

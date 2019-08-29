@@ -236,7 +236,7 @@ enum {
 enum {
 	XTAL_MODE__INTERNAL_OSC		= 0xF,
 	XTAL_MODE__EXTERNAL_OSC		= 0x4,
-}
+};
 
 
 #define RG_CC_CTRL_0			(0x13) // RF212-only register

@@ -25,6 +25,10 @@
 #define LOG_MODULE "rf2xx"
 #define LOG_LEVEL LOG_CONF_LEVEL_RF2XX
 
+// Macros for CC1101 radio
+#define CC1101_clear_CS()    (vsnSPI_chipSelect(CC1101_SPI, SPI_CS_HIGH))
+#define CC1101_set_CS()		(vsnSPI_chipSelect(CC1101_SPI, SPI_CS_LOW))
+
 /// Macros to access I/O functions
 // SPI Chip-Select operations
 #define clearCS()		(vsnSPI_chipSelect(rf2xxSPI, SPI_CS_HIGH))
@@ -124,6 +128,9 @@ volatile static rf2xx_flags_t flags;
 static vsnSPI_CommonStructure SPI_rf2xxStructure;
 vsnSPI_CommonStructure * const rf2xxSPI = &SPI_rf2xxStructure;
 
+static vsnSPI_CommonStructure CC1101_SPI_Structure;
+vsnSPI_CommonStructure * const CC1101_SPI = &CC1101_SPI_Structure;
+
 // EXTI (interrupt) struct (from STM) and constant (immutable) pointer to it.
 static EXTI_InitTypeDef EXTI_rf2xxStructure = {
     .EXTI_Line = EXTI_IRQ_LINE,
@@ -142,6 +149,13 @@ spiErrorCallback(void *cbDevStruct)
 	LOG_ERR("SPI error callback triggered\n");
 }
 
+static void
+CC1101_spiErrorCallback(void *cbDevStruct)
+{
+	vsnSPI_CommonStructure *spi = cbDevStruct;
+	vsnSPI_chipSelect(spi, SPI_CS_HIGH);
+	LOG_ERR("SPI error callback triggered for CC radio\n");
+}
 
 
 void
@@ -251,11 +265,13 @@ rf2xx_reset(void)
 	// CLKM clock change visible immediately
 	bitWrite(SR_CLKM_SHA_SEL, 0);
 
+#if AT86RF2XX_BOARD_SNR //TODO not tested yet
 	// Enable CLKM (as output) so it can be used as external clock source for VESNA
 	bitWrite(SR_CLKM_CTRL, CLKM_CTRL__8MHz);
+#endif
 
     // Enable use of external oscilator
-    bitWrite(SR_XTAL_MODE, XTAL_MODE__EXTERNAL_OSC);
+    bitWrite(SR_XTAL_MODE, XTAL_MODE__INTERNAL_OSC);
 
 	// Enable/disable Tx autogenerating CRC16/CCITT
 	bitWrite(SR_TX_AUTO_CRC_ON, RF2XX_CONF_CHECKSUM);
@@ -365,6 +381,26 @@ rf2xx_init(void)
 		.SPI_FirstBit = SPI_FirstBit_MSB,
 		.SPI_CRCPolynomial = 7,
 	};
+
+    #if AT86RF2XX_BOARD_ISMTV_V1_1
+        //SPI init for CC1101 radio
+        vsnSPI_initCommonStructure(
+            CC1101_SPI,
+            SPI_PORT,
+            &spiConfig,
+            CC1101_CSN_PIN,
+            CC1101_CSN_PORT,
+            RF2XX_SPI_SPEED     //speed can be the same
+        );
+        vsnSPI_Init(CC1101_SPI, CC1101_spiErrorCallback);
+
+        LOG_INFO("Set CC1101 clock output on pin GDO0 (PA2 on STM) \n");
+
+        CC1101_set_clock_output();
+
+        // Give SPI control back to rf2xx
+        vsnSPI_deInit(CC1101_SPI);
+    #endif
 
     // Complete initialization of SPI
     vsnSPI_initCommonStructure(
@@ -699,7 +735,8 @@ int frameRead(void)
     ASSERT(VSN_SPI_SUCCESS == status);
 
     // RSSI of packet
-    rf2xx_last_rssi = bitRead(SR_ED_LEVEL) - 91;
+    rf2xx_last_rssi = (3 * ((radio_value_t)bitRead(SR_RSSI) - 1) + RSSI_BASE_VAL);
+    //rf2xx_last_rssi = bitRead(SR_ED_LEVEL) - 91;
 
     LOG_DBG("RSSI=%idBm LQI=%u\n", rf2xx_last_rssi, rf2xx_last_lqi);
 
@@ -827,10 +864,12 @@ rf2xx_on(void)
         LOG_DBG("Radio is allready on\n");
         return 1;
     }
-    else{                             
-        regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
-        BUSYWAIT_UNTIL(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
-        ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
+    else{     
+        if(!(state == TRX_STATUS_TRX_OFF)){                        
+            regWrite(RG_TRX_STATE, TRX_CMD_FORCE_TRX_OFF);
+            BUSYWAIT_UNTIL(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
+            ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
+        }
 
     // When in polling mode we should't erase RX_START and TRX_END flags
     #if POLLING_MODE
@@ -910,6 +949,9 @@ rf2xx_isr(void)
     }
 
     if (irq.IRQ2_RX_START) {
+
+        rf2xx_last_packet_timestamp = RTIMER_NOW();
+        
         if(flags.RX_START){
             LOG_INFO("RX_START allready on...");
         }
@@ -940,7 +982,7 @@ rf2xx_isr(void)
         //LOG_INFO("TRX_END irq\n");
         if (flags.RX_START) {
             __disable_irq();
-            rf2xx_last_packet_timestamp = RTIMER_NOW();
+            //rf2xx_last_packet_timestamp = RTIMER_NOW();
             //ASSERT_EQUAL(rxBuffer.buf_len, 0);
             LOG_INFO("Buffer length : %u\n ", rxBuffer.buf_len);        //brisi
             frameRead();
@@ -1338,4 +1380,128 @@ bitWrite(uint8_t addr, uint8_t mask, uint8_t offset, uint8_t value)
 	uint8_t tmp = regRead(addr) & ~mask;
 	tmp |= (value << offset) & mask;
 	regWrite(addr, tmp);
+}
+
+
+void
+CC1101_regWrite(uint8_t addr, uint8_t value)
+{
+    vsnSPI_ErrorStatus status;
+    uint8_t dummy __attribute__((unused));
+    uint8_t state;
+
+    status = CC1101_clear_CS();
+    ASSERT(VSN_SPI_SUCCESS == status);
+
+    status = CC1101_set_CS();
+        ASSERT(VSN_SPI_SUCCESS == status);
+
+        int count = 0;			
+			while((GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_6)) && (count < 200000))	
+					count++;										
+			if(count >= 200000){ 							
+				LOG_ERR("CC1101_regWrite: MISO is not low! \n");											
+			}	
+
+    status = vsnSPI_pullByteTXRX(CC1101_SPI, addr , &state);
+        if (VSN_SPI_SUCCESS != status) LOG_WARN("ERR while sending\n");
+        LOG_DBG("regWrite address state is 0x%02x  \n",state);
+
+    status = vsnSPI_pullByteTXRX(CC1101_SPI, value, &state);
+        if (VSN_SPI_SUCCESS != status) LOG_WARN("ERR while receiving\n");
+        LOG_DBG("regWrite data state is 0x%02x  \n",state);
+
+    status = CC1101_clear_CS();
+        ASSERT(VSN_SPI_SUCCESS == status);
+        
+}
+
+void
+CC1101_reset(void){
+    vsnSPI_ErrorStatus status;
+    uint8_t dummy __attribute__((unused));
+
+    //SCLK = 1 and MOSI = 0
+	GPIO_SetBits(GPIOA, GPIO_Pin_5);
+	GPIO_ResetBits(GPIOA, GPIO_Pin_7);
+
+    //Strobe CS low/high
+	GPIO_SetBits(GPIOB, GPIO_Pin_9);
+	vsnTime_delayUS(10);
+	GPIO_ResetBits(GPIOB, GPIO_Pin_9);
+	vsnTime_delayUS(10); 
+
+    //Hold CS low for at least 40us
+	GPIO_SetBits(GPIOB, GPIO_Pin_9);
+	vsnTime_delayUS(100); 
+
+    //Pull CS low and wait for MISO to go low
+	GPIO_ResetBits(GPIOB, GPIO_Pin_9);
+
+	int count = 0;
+			while((GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_6)) && (count < 200000))	
+					count++;										
+			if(count >= 200000){ 							
+				LOG_ERR("CC1101_reset: MISO is not low!\n");												
+			}		
+
+	vsnTime_delayUS(300);
+
+    status = CC1101_set_CS();
+    ASSERT(VSN_SPI_SUCCESS == status);
+       
+        count = 0;			
+			while((GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_6)) && (count < 200000))	
+					count++;										
+			if(count >= 200000){ 							
+				LOG_ERR("CC1101_reset: MISO is not low! \n");											
+			}
+
+    //Isue SRES (0x30) strobe on MOSI line
+    status = vsnSPI_pullByteTXRX(CC1101_SPI, 0x30 , &dummy);
+        ASSERT(VSN_SPI_SUCCESS == status);
+    
+    status = CC1101_clear_CS();
+        ASSERT(VSN_SPI_SUCCESS == status);
+
+	
+    //When MISO goes low again, reset is complete
+        count = 0;    
+			while((GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_6)) && (count < 500000))	
+					count++;										
+			if(count >= 500000){ 							
+				LOG_ERR("CC1101_reset: MISO is not low!\n");												
+			}	
+
+	vsnTime_delayUS(300);
+
+    LOG_INFO("Radio reset complete!\n");
+}
+
+// Set clock output on pin GDO0 of radio CC1101 to be 13.5 MHz
+// For other possible freq see datasheet of the radio
+void
+CC1101_set_clock_output(void){
+    vsnSPI_ErrorStatus status;
+
+    //CS low GPIO_ResetBits(GPIOB, GPIO_Pin_9);
+    status = CC1101_set_CS();
+    ASSERT(VSN_SPI_SUCCESS == status);
+
+    if(GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_6) == 0){
+        //Radio is allready in IDLE state - we can change the register value
+
+        // Set GDO0 output pin to desire freq (0x32 = 13.5MHz)
+        CC1101_regWrite(0x02, 0x32);
+    }
+    else{
+        // Frist reset the radio and then set the freq
+        CC1101_reset();
+        CC1101_regWrite(0x02, 0x32);
+    }
+    status = CC1101_clear_CS();
+
+    vsnTime_delayUS(100);
+
+    if(status == VSN_SPI_SUCCESS)LOG_INFO("GDO0 output freq set to 13.5 MHz\n");
 }

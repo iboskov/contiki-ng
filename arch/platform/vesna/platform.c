@@ -43,7 +43,18 @@ platform_init_stage_one(void)
     // VESNA uses internal clock generator, that's why is limited to 64MHz.
     // For up to 72MHz it would require external oscilator/clock generator.
     // VESNA SNC doesn't have one. 64MHz
-    vsnSetup_intClk(SNC_CLOCK_64MHZ);
+
+#if AT86RF2XX_BOARD_SNR	//TODO not tested yet
+	ErrorStatus stat = 0;
+	// If we are on SNR board setup external clock
+	stat = vsnSetup_extClk();
+
+	if(stat != 1){
+    	vsnSetup_intClk(SNC_CLOCK_64MHZ);
+	}
+#else
+	vsnSetup_intClk(SNC_CLOCK_64MHZ);
+#endif
 
     // - Enable GPIO clocks
     // - Enable interrupts
@@ -52,9 +63,9 @@ platform_init_stage_one(void)
 
 	// Workaround: vesna-drivers have issue with calibration, if clock != 8MHz
 	// TODO: Is this still relevant?
-    vsnSetup_intClk(SNC_CLOCK_8MHZ);
+    //vsnSetup_intClk(SNC_CLOCK_8MHZ);
     vsnSetup_calibHsi();
-    vsnSetup_intClk(SNC_CLOCK_64MHZ);
+    //vsnSetup_intClk(SNC_CLOCK_64MHZ);
 
     vsnPM_mesureAdcBitVolt();
     vsnCRC32_init();

@@ -120,6 +120,10 @@
 	#define EXTI_IRQ_PIN		(GPIO_PinSource3)
 	#define EXTI_IRQ_CHANNEL	(EXTI3_IRQn)
 
+	// Chip select pins for CC101 radio
+	#define CC1101_CSN_PIN      (GPIO_Pin_9)
+	#define CC1101_CSN_PORT     (GPIOB)
+
 
 #else
 	#warning "No predefined board was selected!"
@@ -161,5 +165,9 @@ uint8_t regRead(uint8_t addr);
 
 void bitWrite(uint8_t addr, uint8_t mask, uint8_t offset, uint8_t value);
 uint8_t bitRead(uint8_t addr, uint8_t mask, uint8_t offset);
+
+void CC1101_regWrite(uint8_t addr, uint8_t value);
+void CC1101_reset(void);
+void CC1101_set_clock_output(void);
 
 #endif

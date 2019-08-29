@@ -345,7 +345,7 @@ void UART4_IRQHandler(void)
 
 void TIM2_IRQHandler(void)
 {
-	contiki_rtimer_isr();
+	//contiki_rtimer_isr();
 }
 
 /**

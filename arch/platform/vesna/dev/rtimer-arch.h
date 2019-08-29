@@ -3,12 +3,14 @@
 
 #include "sys/rtimer.h"
 
-// Rtimer is 16bit counter with freq of 65.506 kHZ
-// The timer is not 100% accurate (it does not run at 65.536 kHz)
-// See rtimer-arch.c for explanation why such value
-#define RTIMER_ARCH_SECOND		(65536)
+#if AT86RF2XX_BOARD_ISMTV_V1_1
+    #define RTIMER_ARCH_SECOND      (65533)
+    #define RTIMER_ARCH_PPM         (594) // +1500 //TODO fix it if we have external timer source
+#else
+    #define RTIMER_ARCH_SECOND		(65503)
+    #define RTIMER_ARCH_PPM         (594) 
+#endif
 
-#define RTIMER_ARCH_PPM         (594 + 1500)
 
 // Converts micro seconds to rtimer ticks (65536 ticks/s ---> 1us = 0.065536 tick)
 // Eqn.: T = (us * 0.065536) +- 1/2
@@ -29,8 +31,5 @@
 
 void contiki_rtimer_isr(void);
 rtimer_clock_t rtimer_arch_now(void);
-
-uint32_t rtimer_arch_us_to_rtimerticks(int32_t us);
-uint32_t rtimer_arch_rtimerticks_to_us(int32_t ticks);
 
 #endif
