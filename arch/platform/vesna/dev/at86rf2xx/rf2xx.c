@@ -167,7 +167,7 @@ setPanID(uint16_t pan)
 {
 	regWrite(RG_PAN_ID_0, pan & 0xFF);
 	regWrite(RG_PAN_ID_1, pan >> 8);
-	LOG_INFO("PAN == 0x%02x\n", pan);
+	LOG_DBG("PAN == 0x%02x\n", pan);
 }
 
 
@@ -192,7 +192,7 @@ setShortAddr(uint16_t addr)
 {
 	regWrite(RG_SHORT_ADDR_0, addr & 0xFF);
 	regWrite(RG_SHORT_ADDR_1, addr >> 8);
-	LOG_INFO("Short addr == 0x%02x\n", addr);
+	LOG_DBG("Short addr == 0x%02x\n", addr);
 }
 
 void
@@ -244,11 +244,11 @@ rf2xx_reset(void)
 
     // Radio indentification procedure
     do {
-        LOG_INFO("Detecting AT86RF2xx radio\n");
+        LOG_DBG("Detecting AT86RF2xx radio\n");
 
         // Match JEDEC manufacturer ID
         if (regRead(RG_MAN_ID_0) == RF2XX_MAN_ID_0 && regRead(RG_MAN_ID_1) == RF2XX_MAN_ID_1) {
-            LOG_INFO("JEDEC ID matches Atmel\n");
+            LOG_DBG("JEDEC ID matches Atmel\n");
 
             // Match known radio (and sanitize radio type)
             partNum = regRead(RG_PART_NUM);

@@ -159,6 +159,11 @@ typedef union {
 	uint8_t value;
 } rf2xx_irq_t;
 
+// Const pointer to SPI struct
+extern vsnSPI_CommonStructure * const rf2xxSPI;
+
+// Const pointer to EXTI struct
+extern EXTI_InitTypeDef * const rf2xxEXTI;
 
 void regWrite(uint8_t addr, uint8_t value);
 uint8_t regRead(uint8_t addr);
