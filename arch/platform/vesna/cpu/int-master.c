@@ -6,9 +6,6 @@
 #include <stdbool.h>
 
 
-
-#warning "Not sure how this affect rest of the vesna-drivers"
-
 void
 int_master_enable(void)
 {
