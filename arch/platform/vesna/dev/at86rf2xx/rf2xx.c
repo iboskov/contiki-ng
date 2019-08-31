@@ -368,7 +368,7 @@ rf2xx_init(void)
 		.SPI_CRCPolynomial = 7,
 	};
 
-    #if AT86RF2XX_BOARD_ISMTV_V1_1
+    #if (AT86RF2XX_BOARD_ISMTV_V1_0 || AT86RF2XX_BOARD_ISMTV_V1_1)
     {
         //SPI init for CC1101 radio
         vsnSPI_initCommonStructure(
@@ -937,19 +937,13 @@ rf2xx_isr(void)
     }
 
     if (irq.IRQ2_RX_START) {
-
-        rf2xx_last_packet_timestamp = RTIMER_NOW();
-
         flags.RX_START = 1;
         flags.AMI = 0;
         flags.TRX_END = 0;
-        LOG_INFO("RX_START irq\n");
+        LOG_DBG("RX_START irq\n");
 
-        //RF2XX_STATS_COUNT(rxDetected);
-
-        //__disable_irq();
-        //frameRead();
-        //__enable_irq();
+        rf2xx_last_packet_timestamp = RTIMER_NOW();
+        RF2XX_STATS_ADD(rxDetected);
     }
 
     if (irq.IRQ5_AMI) {
@@ -963,15 +957,9 @@ rf2xx_isr(void)
 
     if (irq.IRQ3_TRX_END) {
         flags.TRX_END = 1;
-        //LOG_INFO("TRX_END irq\n");
-        if (flags.RX_START) {
-            __disable_irq();
-            //rf2xx_last_packet_timestamp = RTIMER_NOW();
-            //ASSERT_EQUAL(rxBuffer.buf_len, 0);
-            LOG_INFO("Buffer length : %u\n ", rxBuffer.buf_len);        //brisi
-            frameRead();
-            __enable_irq();
 
+        if (flags.RX_START) {
+            frameRead();
             process_poll(&rf2xx_process);
  
             RF2XX_STATS_ADD(rxSuccess);
@@ -1176,34 +1164,30 @@ set_value(radio_param_t param, radio_value_t value)
             return RADIO_RESULT_OK;
 
         case RADIO_PARAM_RX_MODE:
-            // FIXME:
+            if (!!(value & RADIO_RX_MODE_ADDRESS_FILTER) != !RF2XX_PROMISCOUS_MODE) {
+                ASSERT_EQUAL(!!(value & RADIO_RX_MODE_ADDRESS_FILTER), !RF2XX_PROMISCOUS_MODE);
+                LOG_ERR("Invalid RF2XX_PROMISCOUS_MODE settings\n");
+            }
+
+            if (!!(value & RADIO_RX_MODE_AUTOACK) != RF2XX_AACK) {
+                ASSERT_EQUAL(!!(value & RADIO_RX_MODE_AUTOACK), RF2XX_AACK);
+                LOG_ERR("Invalid RF2XX_AACK settings\n");
+            }
+
+            if (!!(value & RF2XX_POLLING_MODE) != RF2XX_POLLING_MODE) {
+                ASSERT_EQUAL(!!(value & RF2XX_POLLING_MODE), RF2XX_POLLING_MODE);
+                LOG_ERR("Invalid RF2XX_POLLING_MODE settings\n");
+            }
+
             return RADIO_RESULT_OK;
     
         case RADIO_PARAM_TX_MODE:
-            // FIXME:
+            if (!!(value & RADIO_TX_MODE_SEND_ON_CCA) != RF2XX_CCA) {
+                ASSERT_EQUAL(!!(value & RADIO_TX_MODE_SEND_ON_CCA), RF2XX_CCA);
+                LOG_ERR("Invalid CCA settings\n");
+            }
+
             return RADIO_RESULT_OK;
-
-            //if(value & ~(RADIO_RX_MODE_ADDRESS_FILTER |RADIO_RX_MODE_AUTOACK | RADIO_RX_MODE_POLL_MODE)) {
-            //    return RADIO_RESULT_INVALID_VALUE;
-            //}
-            //LOG_DBG("RADIO_PARAM_RX_MODE 0x%02x\n", value);
-            //opts.addrFilter = !!(value & RADIO_RX_MODE_ADDRESS_FILTER);
-            //opts.autoACK = !!(value & RADIO_RX_MODE_AUTOACK);
-            //opts.pollMode = !!(value & RADIO_RX_MODE_POLL_MODE);
-
-            //regWrite(RG_IRQ_MASK, opts.pollMode ? 0x00 : DEFAULT_IRQ_MASK);
-
-
-            //setAddrFilter(value & RADIO_RX_MODE_ADDRESS_FILTER);
-            //setAutoAck(value & RADIO_RX_MODE_AUTOACK);
-            //setPollMode(value & RADIO_RX_MODE_POLL_MODE);
-            //return RADIO_RESULT_OK;
-
-        //case RADIO_PARAM_TX_MODE:
-        //	opts.autoCCA = !!(value & RADIO_TX_MODE_SEND_ON_CCA);
-        //	// Disable automatic CCA when MAX_CSMA_RETRIES = 7
-        //	bitWrite(SR_MAX_CSMA_RETRIES, opts.autoCCA ? RF2XX_CONF_MAX_CSMA_RETRIES : 7);
-        //	return RADIO_RESULT_OK;
 
         case RADIO_PARAM_TXPOWER:
             if (value < 0 || value > 0xF) {
@@ -1211,7 +1195,6 @@ set_value(radio_param_t param, radio_value_t value)
             }
             bitWrite(SR_TX_PWR, value);
             return RADIO_RESULT_OK;
-
 
         case RADIO_PARAM_CCA_THRESHOLD:
             bitWrite(SR_CCA_ED_THRES, value / 2 + 91);
