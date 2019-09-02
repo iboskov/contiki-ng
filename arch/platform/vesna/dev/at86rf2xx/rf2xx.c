@@ -25,10 +25,6 @@
 #define LOG_MODULE  "rf2xx"
 #define LOG_LEVEL   LOG_LEVEL_RF2XX
 
-#ifndef AT86RF2XX_BOARD_STRING
-#define AT86RF2XX_BOARD_STRING "Unknown"
-#endif
-
 // Macros for CC1101 radio
 #define CC1101_clear_CS()    (vsnSPI_chipSelect(CC1101_SPI, SPI_CS_HIGH))
 #define CC1101_set_CS()		(vsnSPI_chipSelect(CC1101_SPI, SPI_CS_LOW))
@@ -93,7 +89,7 @@ volatile uint32_t rf2xxStats[RF2XX_STATS_COUNT] = { 0 };
 
 // SRC: https://barrgroup.com/Embedded-Systems/How-To/Define-Assert-Macro
 #define ASSERT(expr) ({ if (!(expr)) LOG_ERR("Err: " #expr "\n"); })
-#define ASSERT_EQUAL(x, y)  ({ if (x != y) LOG_ERR("Err: " #x " != " #y ", %i != %i", x, y); })
+#define ASSERT_EQUAL(x, y)  ({ if (x != y) LOG_ERR("Err: " #x " != " #y ", %i != %i\n", x, y); })
 
 
 
@@ -266,7 +262,7 @@ rf2xx_reset(void)
 
     ASSERT(RF2XX_UNDEFINED != rf2xxChip);
 
-	// CLKM clock change visible immediately
+	// CLKM clock change visible (0 = immediately, 1 = needs to go through TRX_OFF)
 	bitWrite(SR_CLKM_SHA_SEL, 0);
 
 #if AT86RF2XX_BOARD_SNR //TODO not tested yet
@@ -294,7 +290,7 @@ rf2xx_reset(void)
 
 	// Number of maximum TX_ARET frame retries
 	// Possible values [0 - 15]
-	bitWrite(SR_MAX_FRAME_RETRIES, RF2XX_ARET ? RF2XX_FRAME_RETRIES : 0);
+	bitWrite(SR_MAX_FRAME_RETRIES, RF2XX_FRAME_RETRIES);
 
 	// Highest allowed backoff exponent
 	regWrite(RG_CSMA_BE, 0x80);
@@ -575,7 +571,7 @@ rf2xx_transmit(unsigned short transmit_len)
     
     ENERGEST_OFF(ENERGEST_TYPE_TRANSMIT);
 
-//#if !POLLING_MODE
+//#if !RF2XX_POLLING_MODE
         // Migrate to RX mode
     #if RF2XX_AACK
         regWrite(RG_TRX_STATE, TRX_CMD_RX_AACK_ON);
@@ -823,10 +819,6 @@ rf2xx_receiving_packet(void)
 int // Check if the radio driver has just received a packet 
 rf2xx_pending_packet(void)
 {
-    //LOG_INFO("%s\n", __func__);
-    if(rxBuffer.buf_len != 0){
-        LOG_INFO("----Pending packet with %u bytes\n", rxBuffer.buf_len);   //brisi
-    }
     return rxBuffer.buf_len != 0;
     
     /*
@@ -845,11 +837,11 @@ rf2xx_pending_packet(void)
 int
 rf2xx_on(void)
 {
-    LOG_DBG("%s\n", __func__);
+    //LOG_DBG("%s\n", __func__);
 
     uint8_t state = bitRead(SR_TRX_STATUS);
     if( (state == TRX_STATUS_RX_ON) || (state == TRX_STATUS_RX_AACK_ON)){
-        LOG_DBG("Radio is allready on\n");
+        //LOG_DBG("Radio is allready on\n");
         return 1;
     }
     else{     
@@ -860,7 +852,7 @@ rf2xx_on(void)
         }
 
     // When in polling mode we should't erase RX_START and TRX_END flags
-    #if POLLING_MODE
+    #if RF2XX_POLLING_MODE
         flags.AMI       = 0;
         flags.TRX_UR    = 0;
         flags.CCA       = 0; 
@@ -889,7 +881,7 @@ rf2xx_on(void)
 int
 rf2xx_off(void)
 {
-    LOG_DBG("%s\n", __func__);
+    //LOG_DBG("%s\n", __func__);
 
     if( TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS)){
         return 1;
@@ -902,7 +894,7 @@ rf2xx_off(void)
         ASSERT(TRX_STATUS_TRX_OFF == bitRead(SR_TRX_STATUS));
     */
         // In polling mode we should't erase RX_START and TRX_END flags
-        #if POLLING_MODE
+        #if RF2XX_POLLING_MODE
             flags.PLL_LOCK  = 0;     
             flags.AMI       = 0;
             flags.TRX_UR    = 0;
@@ -1164,9 +1156,8 @@ set_value(radio_param_t param, radio_value_t value)
             return RADIO_RESULT_OK;
 
         case RADIO_PARAM_RX_MODE:
-            if (!!(value & RADIO_RX_MODE_ADDRESS_FILTER) != !RF2XX_PROMISCOUS_MODE) {
-                ASSERT_EQUAL(!!(value & RADIO_RX_MODE_ADDRESS_FILTER), !RF2XX_PROMISCOUS_MODE);
-                LOG_ERR("Invalid RF2XX_PROMISCOUS_MODE settings\n");
+            if (!!(value & RADIO_RX_MODE_ADDRESS_FILTER) != (RF2XX_AACK && !RF2XX_PROMISCOUS_MODE)) {
+                LOG_ERR("Invalid ADDR_FILTER settings\n");
             }
 
             if (!!(value & RADIO_RX_MODE_AUTOACK) != RF2XX_AACK) {
@@ -1174,8 +1165,7 @@ set_value(radio_param_t param, radio_value_t value)
                 LOG_ERR("Invalid RF2XX_AACK settings\n");
             }
 
-            if (!!(value & RF2XX_POLLING_MODE) != RF2XX_POLLING_MODE) {
-                ASSERT_EQUAL(!!(value & RF2XX_POLLING_MODE), RF2XX_POLLING_MODE);
+            if (!!(value & RADIO_RX_MODE_POLL_MODE) != RF2XX_POLLING_MODE) {
                 LOG_ERR("Invalid RF2XX_POLLING_MODE settings\n");
             }
 
@@ -1183,7 +1173,6 @@ set_value(radio_param_t param, radio_value_t value)
     
         case RADIO_PARAM_TX_MODE:
             if (!!(value & RADIO_TX_MODE_SEND_ON_CCA) != RF2XX_CCA) {
-                ASSERT_EQUAL(!!(value & RADIO_TX_MODE_SEND_ON_CCA), RF2XX_CCA);
                 LOG_ERR("Invalid CCA settings\n");
             }
 

@@ -3,9 +3,14 @@
 
 #include "contiki-net.h"
 
+// String for debug purposes
+#ifndef AT86RF2XX_BOARD_STRING
+#define AT86RF2XX_BOARD_STRING "Unknown"
+#endif
+
 // If driver is built for Contiki's 6Tisch implementation
-#ifdef MAC_CONF_WITH_TSCH
-#define RF2XX_CONF_CSMA_RETRIES (7)
+#if MAC_CONF_WITH_TSCH
+//#define RF2XX_CONF_CSMA_RETRIES (7)
 #define RF2XX_CONF_AACK  (0)
 #define RF2XX_CONF_ARET  (0)
 #define RF2XX_CONF_CCA   (0)
@@ -14,7 +19,7 @@
 
 // Default log level
 #ifndef LOG_CONF_LEVEL_RF2XX
-#define LOG_LEVEL_RF2XX     (LOG_LEVEL_WARN)
+#define LOG_LEVEL_RF2XX     (LOG_LEVEL_DBG)
 #else
 #define LOG_LEVEL_RF2XX     (LOG_CONF_LEVEL_RF2XX)
 #endif
@@ -24,27 +29,6 @@
 #define RF2XX_STATS     (0)
 #else
 #define RF2XX_STATS     (RF2XX_CONF_STATS)
-#endif
-
-// Number of CSMA retries 0-5, 6 = reserved, 7 = immediately without CSMA/CA
-#ifndef RF2XX_CONF_CSMA_RETRIES
-#define RF2XX_CSMA_RETRIES  (5)
-#else
-#define RF2XX_CSMA_RETRIES  (RF2XX_CONF_CSMA_RETRIES)
-#endif
-
-// Number of frame retries, if no ACK, 0-15 (TX_ARET-only)
-#ifndef RF2XX_CONF_FRAME_RETRIES
-#define RF2XX_FRAME_RETRIES     (15)
-#else
-#define RF2XX_FRAME_RETRIES     (RF2XX_CONF_FRAME_RETRIES)
-#endif
-
-// Will CRC16-CITT be offloaded to the radio? 
-#ifndef RF2XX_CONF_CHECKSUM
-#define RF2XX_CHECKSUM  (1)
-#else
-#define RF2XX_CHECKSUM  (RF2XX_CONF_CHECKSUM)
 #endif
 
 // Enable radio's auto acknowledge capabilities (extended mode)
@@ -68,6 +52,27 @@
 #define RF2XX_CCA   (RF2XX_CONF_CCA)
 #endif
 
+// Number of CSMA retries 0-5, 6 = reserved, 7 = immediately without CSMA/CA
+#ifndef RF2XX_CONF_CSMA_RETRIES
+#define RF2XX_CSMA_RETRIES  (5)
+#else
+#define RF2XX_CSMA_RETRIES  (RF2XX_CONF_CSMA_RETRIES)
+#endif
+
+// Number of frame retries, if no ACK, 0-15 (TX_ARET-only)
+#ifndef RF2XX_CONF_FRAME_RETRIES
+#define RF2XX_FRAME_RETRIES     (15)
+#else
+#define RF2XX_FRAME_RETRIES     (RF2XX_CONF_FRAME_RETRIES)
+#endif
+
+// Will CRC16-CITT be offloaded to the radio? 
+#ifndef RF2XX_CONF_CHECKSUM
+#define RF2XX_CHECKSUM  (1)
+#else
+#define RF2XX_CHECKSUM  (RF2XX_CONF_CHECKSUM)
+#endif
+
 // Skip radio's address filter (AACK only)
 #ifndef RF2XX_CONF_PROMISCOUS_MODE
 #define RF2XX_PROMISCOUS_MODE   (0)
@@ -80,7 +85,6 @@
 #else
 #define RF2XX_POLLING_MODE   (RF2XX_CONF_POLLING_MODE)
 #endif
-
 
 
 // AT86RF2xx driver for Contiki(-NG)
