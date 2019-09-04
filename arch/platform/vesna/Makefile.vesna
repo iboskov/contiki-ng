@@ -158,8 +158,8 @@ OBJDUMP_FLAGS += --disassemble --source --disassembler-options=force-thumb
 
 %.olimex: %.$(TARGET)
 	$(Q)openocd \
-		-s $(CONTIKI)/arch/platform/$(TARGET)/OpenOCD/ \
-		-f snc_olimex_ocd.cfg \
+		-f interface/ftdi/olimex-arm-usb-ocd.cfg \
+		-f target/stm32f1x.cfg \
 		-c "init" \
 		-c "reset halt" \
 		-c "poll" \
