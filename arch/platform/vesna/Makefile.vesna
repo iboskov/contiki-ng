@@ -94,21 +94,18 @@ endif
 ifdef AT86RF2XX_BOARD
 AT86RF2XX_BOARD_UPPER = $(shell echo "$(AT86RF2XX_BOARD)" | tr [a-z] [A-Z] | tr [.\ ] _)
 CONTIKI_TARGET_DIRS += dev/at86rf2xx 
-CONTIKI_TARGET_SOURCEFILES += rf2xx.c
+CONTIKI_TARGET_SOURCEFILES += rf2xx.c rf2xx_hal.c
 CFLAGS += -DAT86RF2XX=1
 CFLAGS += -DAT86RF2XX_BOARD_$(AT86RF2XX_BOARD_UPPER)=1
 CFLAGS += -DAT86RF2XX_BOARD_STRING=\"$(AT86RF2XX_BOARD_UPPER)\"
 endif
 
-# LTO is currently not recommended for ARM platforms as it messes up several things
-# due to a bug in ARM library. (Miha Mohorčič)
-#LTO ?= 0
-#ifeq ($(LTO),1)
-#CFLAGS += -lto
-#endif
+# (Workaround) Avoid compile warnings from vesna-drivers
+CFLAGS += -DCC_RADIO_ON_RADIO_CONNECTOR=0
+CFLAGS += -DCC_RADIO_ON_EXPANSION_CONNECTOR=1
 
 
-### Default to use os/lib/dbg-io unless configured to do otherwise
+# Not really sure why is this for and if it is usefull for vesna-drivers.
 MAKE_WITH_LIB_DBG_IO ?= 0
 
 ifeq ($(MAKE_WITH_LIB_DBG_IO),1)

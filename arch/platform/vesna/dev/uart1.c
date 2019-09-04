@@ -60,7 +60,7 @@ PROCESS_THREAD(uart1_tx_process, ev, data)
 		PROCESS_PAUSE();
 
 		if (input_handler != NULL) {
-			while (vsnUSART_read(USART1, &buf, 1)) {
+			while (vsnUSART_read(USART1, (char *)&buf, 1)) {
 				input_handler(buf);
 			}
 		}

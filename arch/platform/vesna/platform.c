@@ -25,7 +25,7 @@
 
 #include "sys/log.h"
 #define LOG_MODULE "Platform"
-#define LOG_LEVEL LOG_LEVEL_MAIN
+#define LOG_LEVEL (LOG_LEVEL_MAIN)
 
 
 void
@@ -42,21 +42,14 @@ platform_init_stage_one(void)
 
     // VESNA uses internal clock generator, that's why is limited to 64MHz.
     // For up to 72MHz it would require external oscilator/clock generator.
-    // VESNA SNC doesn't have own one. 64MHz
+    // VESNA SNC doesn't have own one. 64MHz is the max on HSI oscilator.
 
-#if AT86RF2XX_BOARD_SNR
-	vsnSetup_extClk();
-#endif
     vsnSetup_intClk(SNC_CLOCK_64MHZ);
-
-
-
 
     // - Enable GPIO clocks
     // - Enable interrupts
     // - Enable RTC, Tick,
     vsnSetup_initSnc();
-
 
     vsnSetup_calibHsi();
 
@@ -68,20 +61,20 @@ platform_init_stage_one(void)
 void
 platform_init_stage_two(void)
 {
-	#if UART_CONF_ENABLED
-		uart1_init(BAUD2UBR(UART1_CONF_BAUDRATE));
+	#if UART1_ENABLED
+		uart1_init(BAUD2UBR(UART1_BAUDRATE));
 		LOG_INFO("UART1 enabled\n");
-		#if !SLIP_CONF_ENABLED
+		#if !SLIP_ENABLED
 			uart1_set_input(serial_line_input_byte);
 			process_start(&uart1_tx_process, NULL);
 			serial_line_init();
 			LOG_INFO("UART1 as serial input enabled\n");
-		#endif // !SLIP_CONF_ENABLED
-	#endif // UART_CONF_ENABLED
+		#endif // !SLIP_ENABLED
+	#endif // UART_ENABLED
 
 	node_id_init(); // node_id_init is triggered twice. Here and between stage 2 & 3.
 
-	// TODO: Too much copying ... change only neccessery bits of linkaddr_node_addr
+	// We define unique 64-bit address to represent this device.
 	const uint8_t extAddr[8] = { 0, 0x12, 0x4B, 0, 0, 0x06, (node_id & 0xFF), (node_id >> 8) };
 
 	// populate linkaddr_node_addr. Maintain endianess;
@@ -97,6 +90,14 @@ platform_init_stage_three(void)
 	NETSTACK_RADIO.set_value(RADIO_PARAM_16BIT_ADDR, node_id);
 	NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL, IEEE802154_DEFAULT_CHANNEL);
 	NETSTACK_RADIO.set_object(RADIO_PARAM_64BIT_ADDR, linkaddr_node_addr.u8, LINKADDR_SIZE);
+
+	#if AT86RF2XX_BOARD_SNR
+	{
+		// Go for external output when CLKM is properly configured
+		int status = vsnSetup_extClk();
+		if (status == SUCCESS) LOG_INFO("Switching to external clock source\n");
+	}
+	#endif
 }
 
 

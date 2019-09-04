@@ -3,31 +3,34 @@
 
 #include <stdint.h>
 #include "rf2xx_registermap.h"
+#include "rf2xx_arch.h"
 #include "vsnspi_new.h"
 
-#define RF2XX_CONF_CALIBRATION_PERIOD   (240) // seconds (~4min)
+#ifndef RF2XX_CONF_CALIBRATION_PERIOD
+#define RF2XX_CALIBRATION_PERIOD   (240) // seconds (~4min)
+#else
+#define RF2XX_CALIBRATION_PERIOD   (RF2XX_CONF_CALIBRATION_PERIOD)
+#endif
 
 // Radio identification procedure
 // Manfacturer ID is same for all radios == 0x00 0x1F
-#define RF2XX_MAN_ID_0			(0x1F)
-#define RF2XX_MAN_ID_1			(0x00)
+#define RF2XX_MAN_ID_0		((uint8_t)0x1F)
+#define RF2XX_MAN_ID_1		((uint8_t)0x00)
 
 
 
-#define RF2XX_UNDEFINED     (0x00)
-#define RF2XX_AT86RF212     (0x07)
-#define RF2XX_AT86RF231     (0x03)
-#define RF2XX_AT86RF230     (0x02)
+#define RF2XX_UNDEFINED     ((uint8_t)0x00)
+//#define RF2XX_AT86RF212     ((uint8_t)0x07)
+#define RF2XX_AT86RF231     ((uint8_t)0x03)
+#define RF2XX_AT86RF230     ((uint8_t)0x02)
 //#define RF2XX_AT86RF232     (0x0A) // was never tested
-#define RF2XX_AT86RF233     (0x0B)
-
-
-
-
+#define RF2XX_AT86RF233     ((uint8_t)0x0B)
 
 
 // Maximum supported speed is 8MHz
-#define RF2XX_SPI_SPEED			((uint32_t)8000000)
+#define RF2XX_SPI_SPEED		((uint32_t)8000000)
+
+#define RSSI_BASE_VAL   (-91)
 
 
 // Board specific configurations
@@ -159,11 +162,52 @@ typedef union {
 	uint8_t value;
 } rf2xx_irq_t;
 
+
+typedef struct {
+    uint8_t content[RF2XX_MAX_FRAME_SIZE];
+    uint8_t len;
+    uint16_t *crc;
+    uint8_t lqi;
+    int8_t rssi;
+	uint8_t trac;
+	rtimer_clock_t timestamp;
+} rxFrame_t;
+
+typedef struct {
+    uint8_t content[RF2XX_MAX_FRAME_SIZE];
+    uint8_t len;
+    uint16_t *crc;
+	uint8_t trac;
+} txFrame_t;
+
 // Const pointer to SPI struct
 extern vsnSPI_CommonStructure * const rf2xxSPI;
 
 // Const pointer to EXTI struct
 extern EXTI_InitTypeDef * const rf2xxEXTI;
+
+// Stores radio chip revision
+extern uint8_t rf2xxChip;
+
+// Manipulate chip select (CS) pin
+vsnSPI_ErrorStatus clearCS(void);
+vsnSPI_ErrorStatus setCS(void);
+uint8_t getCS(void);
+
+// Manipulate RST pin
+void clearRST(void);
+void setRST(void);
+uint8_t getRST(void);
+
+// Manipulate multi-function SLP_TR pin
+void clearSLPTR(void);
+void setSLPTR(void);
+uint8_t getSLPTR(void);
+
+// Disable or enable radio's IRQ line
+void clearEXTI(void);
+void enableEXTI(void);
+void disableEXTI(void);
 
 void regWrite(uint8_t addr, uint8_t value);
 uint8_t regRead(uint8_t addr);
@@ -174,5 +218,18 @@ uint8_t bitRead(uint8_t addr, uint8_t mask, uint8_t offset);
 void CC1101_regWrite(uint8_t addr, uint8_t value);
 void CC1101_reset(void);
 void CC1101_set_clock_output(void);
+
+
+// Initialize I/O periphery (pins, EXTI, SPI, etc.)
+void rf2xx_initHW(void);
+
+// Radio hard reset
+void rf2xx_reset(void);
+
+// Transfer frame from the radio
+int frameRead(rxFrame_t *frame);
+
+// Transfer frame to the radio
+int frameWrite(txFrame_t *frame);
 
 #endif

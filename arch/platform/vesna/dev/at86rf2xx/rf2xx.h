@@ -8,18 +8,19 @@
 #define AT86RF2XX_BOARD_STRING "Unknown"
 #endif
 
+
 // If driver is built for Contiki's 6Tisch implementation
 #if MAC_CONF_WITH_TSCH
-//#define RF2XX_CONF_CSMA_RETRIES (7)
 #define RF2XX_CONF_AACK  (0)
 #define RF2XX_CONF_ARET  (0)
 #define RF2XX_CONF_CCA   (0)
 #define RF2XX_CONF_POLLING_MODE (1)
 #endif
 
+
 // Default log level
 #ifndef LOG_CONF_LEVEL_RF2XX
-#define LOG_LEVEL_RF2XX     (LOG_LEVEL_DBG)
+#define LOG_LEVEL_RF2XX     (LOG_LEVEL_WARN)
 #else
 #define LOG_LEVEL_RF2XX     (LOG_CONF_LEVEL_RF2XX)
 #endif
@@ -56,6 +57,9 @@
 #ifndef RF2XX_CONF_CSMA_RETRIES
 #define RF2XX_CSMA_RETRIES  (5)
 #else
+#if RF2XX_CONF_CSMA_RETRIES < 0 || RF2XX_CONF_CSMA_RETRIES > 5
+#error "Invalid RF2XX_CONF_CSMA_RETRIES"
+#endif
 #define RF2XX_CSMA_RETRIES  (RF2XX_CONF_CSMA_RETRIES)
 #endif
 
@@ -92,8 +96,6 @@ extern const struct radio_driver rf2xx_driver;
 
 // Radio driver API
 int rf2xx_init(void);
-
-int rf2xx_reset(void);
 
 int rf2xx_prepare(const void *payload, unsigned short payload_len);
 int rf2xx_transmit(unsigned short payload_len);

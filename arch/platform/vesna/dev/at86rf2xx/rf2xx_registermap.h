@@ -2,9 +2,61 @@
 #define RF2XX_REGISTERMAP_H_
 
 
-#define RG_NOOP				(0x00)
+enum {
+	RG_NOOP				= 0x00,
+	RG_TRX_STATUS		= 0x01,
+	RG_TRX_STATE		= 0x02,
+	RG_TRX_CTRL_0		= 0x03,
+	RG_TRX_CTRL_1		= 0x04,
+	RG_PHY_TX_PWR		= 0x05,
+	RG_PHY_RSSI			= 0x06,
+	RG_PHY_ED_LEVEL		= 0x07,
+	RG_PHY_CC_CCA		= 0x08,
+	RG_CCA_THRES		= 0x09,
+	RG_RX_CTRL			= 0x0A,
+	RG_TRX_CTRL_2		= 0x0C,
+	RG_IRQ_MASK			= 0x0E,
+	RG_IRQ_STATUS		= 0x0F,
+	RG_VREG_CTRL		= 0x10,
+	RG_BATMON			= 0x11,
+	RG_XOSC_CTRL		= 0x12,
+	RG_CC_CTRL_0		= 0x13,
+	RG_CC_CTRL_1		= 0x14,
+	RG_RX_SYN			= 0x15,
+	// 0x16
+	RG_XAH_CTRL_1		= 0x17,
+	RG_FTN_CTRL			= 0x18,
+	// 0x19
+	RG_PLL_CF			= 0x1A,
+	RG_PLL_DCU			= 0x1B,
+	RG_PART_NUM			= 0x1C,
+	RG_VERSION_NUM		= 0x1D,
+	RG_MAN_ID_0			= 0x1E,
+	RG_MAN_ID_1			= 0x1F,
+	RG_SHORT_ADDR_0		= 0x20,
+	RG_SHORT_ADDR_1		= 0x21,
+	RG_PAN_ID_0			= 0x22,
+	RG_PAN_ID_1			= 0x23,
+	RG_IEEE_ADDR_0		= 0x24,
+	RG_IEEE_ADDR_1		= 0x25,
+	RG_IEEE_ADDR_2		= 0x26,
+	RG_IEEE_ADDR_3		= 0x27,
+	RG_IEEE_ADDR_4		= 0x28,
+	RG_IEEE_ADDR_5		= 0x29,
+	RG_IEEE_ADDR_6		= 0x2A,
+	RG_IEEE_ADDR_7		= 0x2B,
+	RG_XAH_CTRL_0		= 0x2C,
+	RG_CSMA_SEED_0		= 0x2D,
+	RG_CSMA_SEED_1		= 0x2E,
+	RG_CSMA_BE			= 0x2F,
+	//
+	RG_TST_CTRL_DIGI	= 0x36,
+};
 
-#define RG_TRX_STATUS		(0x01)
+
+//#define RG_NOOP				(0x00)
+
+//#define RG_TRX_STATUS		(0x01)
 #define SR_TRX_STATUS		RG_TRX_STATUS, 0x1F, 0
 #define SR_RESERVED_01_5	RG_TRX_STATUS, 0x20, 5
 #define SR_CCA_STATUS		RG_TRX_STATUS, 0x40, 6
@@ -31,7 +83,7 @@ enum {
 };
 
 
-#define RG_TRX_STATE		(0x02)
+//#define RG_TRX_STATE		(0x02)
 #define SR_TRX_CMD			RG_TRX_STATE, 0x1F, 0
 #define SR_TRAC_STATUS		RG_TRX_STATE, 0xE0, 5
 
@@ -60,7 +112,7 @@ enum {
 };
 
 
-#define RG_TRX_CTRL_0		(0x03)
+//#define RG_TRX_CTRL_0		(0x03)
 #define SR_CLKM_CTRL		RG_TRX_CTRL_0, 0x07, 0
 #define SR_CLKM_SHA_SEL		RG_TRX_CTRL_0, 0x08, 3
 #define SR_PAD_IO_CLKM		RG_TRX_CTRL_0, 0x30, 4 // Removed in RF233
@@ -88,7 +140,7 @@ enum {
 
 
 
-#define	RG_TRX_CTRL_1		(0x04)
+//#define	RG_TRX_CTRL_1		(0x04)
 #define SR_IRQ_POLARITY		RG_TRX_CTRL_1, 0x01, 0
 #define SR_IRQ_MASK_MODE	RG_TRX_CTRL_1, 0x02, 1
 
@@ -112,7 +164,7 @@ enum {
 
 
 // This register differs quite a bit between radios
-#define RG_PHY_TX_PWR		(0x05)
+//#define RG_PHY_TX_PWR		(0x05)
 
 // (AT86RF21x-only) configure PA_BOOST, GC_PA, TX_PWR at the same time
 #define SR_TX_PWR_RF21x_ALL	RG_PHY_TX_PWR, 0xFF, 0
@@ -135,17 +187,17 @@ enum {
 };
 
 
-#define RG_PHY_RSSI			(0x06)
+//#define RG_PHY_RSSI			(0x06)
 #define	SR_RSSI				RG_PHY_RSSI, 0x1F, 0
 #define SR_RND_VALUE		RG_PHY_RSSI, 0x30, 5
 #define SR_RX_CRC_VALID		RG_PHY_RSSI, 0x80, 7
 
 
-#define RG_PHY_ED_LEVEL		(0x07)
+//#define RG_PHY_ED_LEVEL		(0x07)
 #define	SR_ED_LEVEL			RG_PHY_ED_LEVEL, 0xFF, 0
 
 
-#define RG_PHY_CC_CCA		(0x08)
+//#define RG_PHY_CC_CCA		(0x08)
 #define SR_CHANNEL			RG_PHY_CC_CCA, 0x1F, 0
 #define SR_CCA_MODE			RG_PHY_CC_CCA, 0x60, 5
 #define SR_CCA_REQUEST		RG_PHY_CC_CCA, 0x80, 7
@@ -160,15 +212,15 @@ enum {
 
 
 
-#define RG_CCA_THRES		(0x09)
+//#define RG_CCA_THRES		(0x09)
 #define SR_CCA_ED_THRES		RG_CCA_THRES, 0x0F, 0
 #define SR_serverved_09_1	RG_CCA_THRES, 0xF0, 4
 
 
-#define RG_RX_CTRL			(0x0A)
+//#define RG_RX_CTRL			(0x0A)
 
 
-#define RG_TRX_CTRL_2		(0x0C)
+//#define RG_TRX_CTRL_2		(0x0C)
 #define SR_OQPSK_DATA_RATE	RG_TRX_CTRL_2, 0x03, 0
 #define SR_reserverd_0C		RG_TRX_CTRL_2, 0x7C, 2
 #define SR_RX_SAFE_MODE		RG_TRX_CTRL_2, 0x80, 7
@@ -182,7 +234,7 @@ enum {
 
 
 
-#define RG_IRQ_MASK			(0x0E)
+//#define RG_IRQ_MASK			(0x0E)
 #define SR_IRQ_MASK			RG_IRQ_MASK, 0xFF, 0
 
 enum {
@@ -199,7 +251,7 @@ enum {
 
 
 
-#define RG_IRQ_STATUS		(0x0F)
+//#define RG_IRQ_STATUS		(0x0F)
 #define SR_IRQ_STATUS		RG_IRQ_STATUS, 0xFF, 0
 
 #define SR_IRQ0_PLL_LOCK		RG_IRQ_STATUS, IRQ0_PLL_LOCK, 0
@@ -214,7 +266,7 @@ enum {
 
 
 
-#define RG_VREG_CTRL			(0x10)
+//#define RG_VREG_CTRL			(0x10)
 #define SR_RESERVED_10_0		RG_VREG_CTRL, 0x03, 0
 #define SR_DVDD_OK				RG_VREG_CTRL, 0x04, 2
 #define SR_DVREG_EXT			RG_VREG_CTRL, 0x08, 3
@@ -223,13 +275,13 @@ enum {
 #define	SR_AVREG_EXT			RG_VREG_CTRL, 0x80, 7
 
 
-#define RG_BATMON				(0x11)
+//#define RG_BATMON				(0x11)
 #define SR_BATMON_VTH			RG_BATMON, 0x0F, 0
 #define SR_BATMON_HR			RG_BATMON, 0x10, 4
 #define SR_BATMON_OK			RG_BATMON, 0x20, 5
 #define SR_RESERVED_11_6		RG_BATMON, 0xC0, 6
 
-#define RG_XOSC_CTRL			(0x12)
+//#define RG_XOSC_CTRL			(0x12)
 #define SR_XTAL_TRIM			RG_XOSC_CTRL, 0x0F, 0
 #define SR_XTAL_MODE			RG_XOSC_CTRL, 0xF0, 4
 
@@ -239,16 +291,16 @@ enum {
 };
 
 
-#define RG_CC_CTRL_0			(0x13) // RF212-only register
+//#define RG_CC_CTRL_0			(0x13) // RF212-only register
 #define SR_CC_NUMBER			RG_CC_CTRL_0, 0xFF, 0
 
 
-#define RG_CC_CTRL_1			(0x14) // RF212-only register
+//#define RG_CC_CTRL_1			(0x14) // RF212-only register
 #define SR_CC_BAND				RG_CC_CTRL_1, 0x07, 0
 #define SR_RESERVED_14_3		RG_CC_CTRL_1, 0xF8, 3
 
 
-#define RG_RX_SYN				(0x15)
+//#define RG_RX_SYN				(0x15)
 #define SR_RX_PDT_LEVEL			RG_RX_SYN, 0x0F, 0
 #define SR_RESERVED_15_4		RG_RX_SYN, 0x70, 4
 #define SR_RX_PDT_DIS			RG_RX_SYN, 0x80, 7
@@ -256,93 +308,93 @@ enum {
 
 
 
-#define RG_XAH_CTRL_1			(0x17)
+//#define RG_XAH_CTRL_1			(0x17)
 #define SR_AACK_PROM_MODE		RG_XAH_CTRL_1, 0x02, 1
 #define SR_AACK_ACK_TIME		RG_XAH_CTRL_1, 0x04, 2
 #define SR_AACK_UPLD_RES_FT		RG_XAH_CTRL_1, 0x10, 4
 #define SR_AACK_FLTR_RES_FT		RG_XAH_CTRL_1, 0x20, 5
 
 
-#define RG_FTN_CTRL				(0x18)
+//#define RG_FTN_CTRL				(0x18)
 #define SR_RESERVED_18_0		RG_FTN_CTRL, 0x7F, 0
 #define	SR_FTN_START			RG_FTN_CTRL, 0x80, 7
 
 
 
-#define RG_PLL_CF				(0x1A)
+//#define RG_PLL_CF				(0x1A)
 #define SR_RESERVED_1A_0		RG_PLL_CF, 0x7F, 0
 #define SR_PLL_CF_START			RG_PLL_CF, 0x80, 7
 
-#define RG_PLL_DCU				(0x1B)
+//#define RG_PLL_DCU				(0x1B)
 #define SR_RESERVED_1B_0		RG_PLL_DCU, 0x7F, 0
 #define	SR_PLL_DCU_START		RG_PLL_DCU, 0x80, 7
 
 
-#define RG_PART_NUM				(0x1C)
+//#define RG_PART_NUM				(0x1C)
 #define	SR_PART_NUM				RG_PART_NUM, 0xFF, 0
 
 
-#define RG_VERSION_NUM			(0x1D)
+//#define RG_VERSION_NUM			(0x1D)
 #define SR_VERSION_NUM			RG_VERSION_NUM, 0xFF, 0
 
 
-#define RG_MAN_ID_0				(0x1E)
+//#define RG_MAN_ID_0				(0x1E)
 #define SR_MAN_ID_0				RG_MAN_ID_0, 0xFF, 0
 
-#define RG_MAN_ID_1				(0x1F)
+//#define RG_MAN_ID_1				(0x1F)
 #define SR_MAN_ID_1				RG_MAN_ID_1, 0xFF, 0
 
 
 
-#define RG_SHORT_ADDR_0			(0x20)
+//#define RG_SHORT_ADDR_0			(0x20)
 #define SR_SHORT_ADDR_0			RG_SHORT_ADDR_0, 0xFF, 0
 
-#define RG_SHORT_ADDR_1			(0x21)
+//#define RG_SHORT_ADDR_1			(0x21)
 #define SR_SHORT_ADDR_1			RG_SHORT_ADDR_1, 0xFF, 0
 
 
-#define RG_PAN_ID_0				(0x22)
+//#define RG_PAN_ID_0				(0x22)
 #define	SR_PAN_ID_0				RG_PAN_ID_0, 0xFF, 0
 
-#define RG_PAN_ID_1				(0x23)
+//#define RG_PAN_ID_1				(0x23)
 #define	SR_PAN_ID_1				RG_PAN_ID_1, 0xFF, 0
 
 
-#define	RG_IEEE_ADDR_0			(0x24)
+//#define	RG_IEEE_ADDR_0			(0x24)
 #define	SR_IEEE_ADDR_0			RG_IEEE_ADDR_0, 0xFF, 0
 
-#define RG_IEEE_ADDR_1			(0x25)
+//#define RG_IEEE_ADDR_1			(0x25)
 #define	SR_IEEE_ADDR_1			RG_IEEE_ADDR_1, 0xFF, 0
 
-#define RG_IEEE_ADDR_2			(0x26)
+//#define RG_IEEE_ADDR_2			(0x26)
 #define SR_IEEE_ADDR_2			RG_IEEE_ADDR_2, 0xFF, 0
 
-#define RG_IEEE_ADDR_3			(0x27)
+//#define RG_IEEE_ADDR_3			(0x27)
 #define SR_IEEE_ADDR_3			RG_IEEE_ADDR_3, 0xFF, 0
 
-#define RG_IEEE_ADDR_4			(0x28)
+//#define RG_IEEE_ADDR_4			(0x28)
 #define SR_IEEE_ADDR_4			RG_IEEE_ADDR_4, 0xFF, 0
 
-#define RG_IEEE_ADDR_5			(0x29)
+//#define RG_IEEE_ADDR_5			(0x29)
 #define SR_IEEE_ADDR_5			RG_IEEE_ADDR_5, 0xFF, 0
 
-#define RG_IEEE_ADDR_6			(0x2A)
+//#define RG_IEEE_ADDR_6			(0x2A)
 #define SR_IEEE_ADDR_6			RG_IEEE_ADDR_6, 0xFF, 0
 
-#define RG_IEEE_ADDR_7			(0x2B)
+//#define RG_IEEE_ADDR_7			(0x2B)
 #define SR_IEEE_ADDR_7			RG_IEEE_ADDR_7, 0xFF, 0
 
 
-#define RG_XAH_CTRL_0			(0x2C)
+//#define RG_XAH_CTRL_0			(0x2C)
 #define SR_SLOTTED_OPERATION	RG_XAH_CTRL_0, 0x01, 0
 #define	SR_MAX_CSMA_RETRIES		RG_XAH_CTRL_0, 0x0E, 1
 #define	SR_MAX_FRAME_RETRIES	RG_XAH_CTRL_0, 0xF0, 4
 
 
-#define RG_CSMA_SEED_0			(0x2D)
+//#define RG_CSMA_SEED_0			(0x2D)
 #define	SR_CSMA_SEED_0			RG_CSMA_SEED_0, 0xFF, 0
 
-#define RG_CSMA_SEED_1			(0x2E)
+//#define RG_CSMA_SEED_1			(0x2E)
 #define SR_CSMA_SEED_1			RG_CSMA_SEED_1, 0x07, 0
 #define	SR_AACK_I_AM_COORD		RG_CSMA_SEED_1, 0x08, 3
 #define SR_AACK_DIS_ACK			RG_CSMA_SEED_1, 0x10, 4
@@ -350,13 +402,13 @@ enum {
 #define	SR_AACK_FVN_MODE		RG_CSMA_SEED_1, 0xC0, 6
 
 
-#define RG_CSMA_BE				(0x2F)
+//#define RG_CSMA_BE				(0x2F)
 #define SR_MAX_BE				RG_CSMA_BE, 0xF0, 4
 #define SR_MIN_BE				RG_CSMA_BE, 0x0F, 0
 
 
 
-#define RG_TST_CTRL_DIGI		(0x36)
+//#define RG_TST_CTRL_DIGI		(0x36)
 
 
 #endif

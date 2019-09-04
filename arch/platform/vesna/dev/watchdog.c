@@ -13,7 +13,7 @@
 #define LOG_LEVEL LOG_CONF_LEVEL_WATCHDOG
 
 
-#if WATCHDOG_CONF_ENABLED
+#if WATCHDOG_ENABLED
 
 void watchdog_init(void) {
     IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);

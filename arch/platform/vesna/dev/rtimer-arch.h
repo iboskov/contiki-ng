@@ -3,7 +3,7 @@
 
 #include "sys/rtimer.h"
 
-#if AT86RF2XX_BOARD_ISMTV_V1_1
+#if (AT86RF2XX_BOARD_ISMTV_V1_0 || AT86RF2XX_BOARD_ISMTV_V1_1)
     #define RTIMER_ARCH_SECOND      (65533)
     #define RTIMER_ARCH_PPM         (594) // +1500 //TODO fix it if we have external timer source
 #else
