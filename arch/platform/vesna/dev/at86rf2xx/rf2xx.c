@@ -10,6 +10,8 @@
 #include "sys/energest.h"
 #include "sys/rtimer.h"
 
+#include "sys/critical.h"
+
 #include "rf2xx_registermap.h"
 #include "rf2xx_hal.h"
 #include "rf2xx.h"
@@ -129,10 +131,8 @@ rf2xx_prepare(const void *payload, unsigned short payload_len)
         return RADIO_TX_ERR;
     }
 
-    __disable_irq();
     memcpy(txFrame.content, payload, payload_len);
     txFrame.len = payload_len;
-    __enable_irq();
 
     LOG_DBG("Prepared %u bytes\n", payload_len);
 
@@ -237,13 +237,17 @@ rf2xx_send(const void *payload, unsigned short payload_len)
 
 int rf2xx_read(void *buf, unsigned short buf_len)
 {
-    __disable_irq();
+    int_master_status_t status;
     uint8_t frame_len = rxFrame.len;
+
+    status = critical_enter();
+
     memcpy(buf, rxFrame.content, rxFrame.len);
     rxFrame.len = 0;
-    __enable_irq();
-    LOG_DBG("Got %u bytes\n", frame_len);
 
+    critical_exit(status);
+
+    LOG_DBG("Got %u bytes\n", frame_len);
     return frame_len;
 }
 

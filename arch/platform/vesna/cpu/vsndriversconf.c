@@ -14,7 +14,7 @@
 #include "vsndriversconf.h"
 #include "vsnsetup.h"
 
-#include "stdio.h"
+#include <stdio.h>
 
 #ifdef DEBUG_DRIVERS_CONF
 #define PRINTF(...) printf(__VA_ARGS__)

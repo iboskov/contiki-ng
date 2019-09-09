@@ -7,7 +7,7 @@
 #define BAUD2UBR(baud) baud
 
 
-PROCESS_NAME(uart1_tx_process);
+PROCESS_NAME(uart1_rx_process);
 
 void uart1_init(unsigned long ubr);
 void uart1_writeb(unsigned char c);
