@@ -7,6 +7,8 @@
 #include "sys/energest.h"
 #include "sys/rtimer.h"
 
+#include "sys/critical.h"
+
 #include "stm32f10x_rcc.h"
 #include "stm32f10x_exti.h"
 #include "stm32f10x_gpio.h"
@@ -21,7 +23,7 @@
 #include "vsnsetup.h"
 #endif
 
-#define LOG_MODULE  "rf2xx_hal"
+#define LOG_MODULE  "rf2xxHAL"
 #define LOG_LEVEL   LOG_LEVEL_RF2XX
 
 
@@ -263,10 +265,13 @@ inline static vsnSPI_ErrorStatus
 REGREAD(uint8_t addr, uint8_t *value)
 {
     vsnSPI_ErrorStatus status;
+    int_master_status_t intStatus;
 
     // Clear chip-select if it was not cleared
     status = clearCS();
     if (status != VSN_SPI_SUCCESS) goto error; // goto is considered bad practice, however it is OK for small cases
+
+    intStatus = critical_enter();
 
     // start SPI communication
     status = setCS();
@@ -280,6 +285,7 @@ REGREAD(uint8_t addr, uint8_t *value)
 
 error:
     clearCS();
+    critical_exit(intStatus);
     if (status != VSN_SPI_SUCCESS) LOG_WARN("register read error (0x%02x)\n", addr);
     return status;
 }
@@ -289,10 +295,13 @@ inline static vsnSPI_ErrorStatus
 REGWRITE(uint8_t addr, const uint8_t value)
 {
     vsnSPI_ErrorStatus status;
+    int_master_status_t intStatus;
     uint8_t dummy __attribute__((unused));
 
     status = clearCS();
     if (status != VSN_SPI_SUCCESS) goto error; // goto is considered bad practice, however it is OK for small cases
+
+    intStatus = critical_enter();
 
     // start SPI communication
     status = setCS();
@@ -306,6 +315,7 @@ REGWRITE(uint8_t addr, const uint8_t value)
 
 error:
     clearCS();
+    critical_exit(intStatus);
     if (status != VSN_SPI_SUCCESS) LOG_WARN("register write error (0x%02x)\n", addr);
     return status;
 }
@@ -315,11 +325,15 @@ inline static vsnSPI_ErrorStatus
 FIFOREAD(rxFrame_t *frame)
 {
     vsnSPI_ErrorStatus status;
+    int_master_status_t intStatus;
     rf2xx_irq_t irq;
     uint8_t dummy __attribute__((unused));
 
     status = clearCS();
     if (status != VSN_SPI_SUCCESS) goto error;
+
+    // critical section
+    intStatus = critical_enter();
 
     status = setCS();
     if (status != VSN_SPI_SUCCESS) goto error;
@@ -361,6 +375,8 @@ FIFOREAD(rxFrame_t *frame)
         if (status != VSN_SPI_SUCCESS) goto error;
     }
 
+    critical_exit(intStatus);
+
     frame->rssi += -91; // RSSI_BASE_VAL
 
     return status;
@@ -368,6 +384,7 @@ FIFOREAD(rxFrame_t *frame)
 error:
     clearCS();
     frame->len = 0;
+    critical_exit(intStatus);
     LOG_WARN("Frame read error\n");
     return status;
 }
@@ -377,10 +394,13 @@ inline static vsnSPI_ErrorStatus
 FIFOWRITE(txFrame_t *frame)
 {
     vsnSPI_ErrorStatus status;
+    int_master_status_t intStatus;
     uint8_t dummy __attribute__((unused));
 
     status = clearCS();
     if (status != VSN_SPI_SUCCESS) goto error;
+
+    intStatus = critical_enter();
 
     status = setCS();
     if (status != VSN_SPI_SUCCESS) goto error;
@@ -398,6 +418,7 @@ FIFOWRITE(txFrame_t *frame)
 
 error:
     clearCS();
+    critical_exit(intStatus);
     if (status != VSN_SPI_SUCCESS) LOG_WARN("Frame write error\n");
     return status;
 }

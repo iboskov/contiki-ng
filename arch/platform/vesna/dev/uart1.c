@@ -14,7 +14,7 @@
 static int (*input_handler)(unsigned char c) = NULL;
 
 
-PROCESS(uart1_tx_process, "UART1 Tx process");
+PROCESS(uart1_rx_process, "UART1 Rx process");
 
 
 void uart1_init(unsigned long ubr) {
@@ -45,7 +45,7 @@ void uart1_set_input(int (*input) (unsigned char c)) {
 }
 
 
-PROCESS_THREAD(uart1_tx_process, ev, data)
+PROCESS_THREAD(uart1_rx_process, ev, data)
 {
 	unsigned char buf;
 

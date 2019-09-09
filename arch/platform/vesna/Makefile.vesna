@@ -61,7 +61,7 @@ TARGET_STARTFILES = ${addprefix $(OBJECTDIR)/,${call oname, $(TARGET_START_SOURC
 CONTIKI_TARGET_DIRS += . cpu dev
 
 CONTIKI_TARGET_SOURCEFILES += platform.c vsndriversconf.c int-master.c
-CONTIKI_TARGET_SOURCEFILES += clock.c rtimer-arch.c uart1.c watchdog.c node-id.c slip_arch.c
+CONTIKI_TARGET_SOURCEFILES += clock.c rtimer-arch.c uart1.c watchdog.c node-id.c slip-arch.c
 
 CONTIKI_SOURCEFILES += $(TARGET_START_SOURCEFILES) $(VSNDRIVERS_SOURCEFILES) $(CONTIKI_TARGET_SOURCEFILES)
 
@@ -95,14 +95,15 @@ ifdef AT86RF2XX_BOARD
 AT86RF2XX_BOARD_UPPER = $(shell echo "$(AT86RF2XX_BOARD)" | tr [a-z] [A-Z] | tr [.\ ] _)
 CONTIKI_TARGET_DIRS += dev/at86rf2xx 
 CONTIKI_TARGET_SOURCEFILES += rf2xx.c rf2xx_hal.c
-CFLAGS += -DAT86RF2XX=1
-CFLAGS += -DAT86RF2XX_BOARD_$(AT86RF2XX_BOARD_UPPER)=1
+CFLAGS += -DAT86RF2XX
+CFLAGS += -DAT86RF2XX_BOARD_$(AT86RF2XX_BOARD_UPPER)
 CFLAGS += -DAT86RF2XX_BOARD_STRING=\"$(AT86RF2XX_BOARD_UPPER)\"
 endif
 
 # (Workaround) Avoid compile warnings from vesna-drivers
-CFLAGS += -DCC_RADIO_ON_RADIO_CONNECTOR=0
-CFLAGS += -DCC_RADIO_ON_EXPANSION_CONNECTOR=1
+#CFLAGS += -DVSNCCRADIO_868=1
+#CFLAGS += -DCC_RADIO_ON_RADIO_CONNECTOR=0
+#CFLAGS += -DCC_RADIO_ON_EXPANSION_CONNECTOR=0
 
 
 # Not really sure why is this for and if it is usefull for vesna-drivers.
