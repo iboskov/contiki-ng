@@ -76,19 +76,19 @@ const tsch_timeslot_timing_usec tsch_timeslot_timing_us_10000 = {
   10000, /* TimeslotLength */
 };
 
-#define N   (2)
+#define N   (1)
 
 const tsch_timeslot_timing_usec tsch_timeslot_timing_us_20000 = {
    N*1800, /* CCAOffset */
     N*128, /* CCA */
    N*2120, /* TxOffset */
   N*(2120 - (TSCH_CONF_RX_WAIT / 2)), /* RxOffset */
-    N*3000, /* RxAckDelay */
-   N*1200, /* TxAckDelay */
+    N*800, /* RxAckDelay */
+    N*1600, /* TxAckDelay */          //gre tudi z 1400
   N*TSCH_CONF_RX_WAIT, /* RxWait */
-    N*1000, /* AckWait */
+    N*2600, /* AckWait */             //gre tudi z 2500
     N*192, /* RxTx */
-   N*3500, /* MaxAck */
+   N*3000, /* MaxAck */               
    N*4256, /* MaxTx */
   N*10000, /* TimeslotLength */
 };
