@@ -215,11 +215,6 @@ uint8_t regRead(uint8_t addr);
 void bitWrite(uint8_t addr, uint8_t mask, uint8_t offset, uint8_t value);
 uint8_t bitRead(uint8_t addr, uint8_t mask, uint8_t offset);
 
-void CC1101_regWrite(uint8_t addr, uint8_t value);
-void CC1101_reset(void);
-void CC1101_set_clock_output(void);
-
-
 // Initialize I/O periphery (pins, EXTI, SPI, etc.)
 void rf2xx_initHW(void);
 
@@ -231,5 +226,14 @@ int frameRead(rxFrame_t *frame);
 
 // Transfer frame to the radio
 int frameWrite(txFrame_t *frame);
+
+// CC1101 radio functions
+void CC1101_regWrite(uint8_t addr, uint8_t value);
+void CC1101_reset(void);
+void configure_cc1101(void);
+
+// Manipulate chip select (CS) pin of radio CC1101
+void CC1101_clear_CS(void);
+void CC1101_set_CS(void);
 
 #endif

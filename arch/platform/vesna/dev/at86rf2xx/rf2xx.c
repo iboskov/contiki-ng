@@ -18,10 +18,6 @@
 #define LOG_MODULE  "rf2xx"
 #define LOG_LEVEL   LOG_LEVEL_RF2XX
 
-// Macros for CC1101 radio
-#define CC1101_clear_CS()    (vsnSPI_chipSelect(CC1101_SPI, SPI_CS_HIGH))
-#define CC1101_set_CS()		(vsnSPI_chipSelect(CC1101_SPI, SPI_CS_LOW))
-
 PROCESS(rf2xx_process, "AT86RF2xx driver");
 
 
@@ -43,17 +39,6 @@ static txFrame_t txFrame;
 uint8_t rf2xxChip = RF2XX_UNDEFINED;
 
 volatile static rf2xx_flags_t flags;
-
-static vsnSPI_CommonStructure CC1101_SPI_Structure;
-vsnSPI_CommonStructure * const CC1101_SPI = &CC1101_SPI_Structure;
-
-static void
-CC1101_spiErrorCallback(void *cbDevStruct)
-{
-	vsnSPI_CommonStructure *spi = cbDevStruct;
-	vsnSPI_chipSelect(spi, SPI_CS_HIGH);
-	LOG_ERR("SPI error callback triggered for CC radio\n");
-}
 
 
 void
@@ -114,66 +99,16 @@ getLongAddr(uint8_t *addr, uint8_t len)
 }
 
 
-#if (AT86RF2XX_BOARD_ISMTV_V1_0 || AT86RF2XX_BOARD_ISMTV_V1_1)
-void
-configure_cc1101(void)
-{
-    // These settings are passed as pointer and they have to exist for the runtime
-    // and does not change. That is why struct is `static`.
-	static SPI_InitTypeDef spiConfig = {
-		//.SPI_BaudRatePrescaler is overwritten later
-		.SPI_Direction = SPI_Direction_2Lines_FullDuplex,
-		.SPI_Mode = SPI_Mode_Master,
-		.SPI_DataSize = SPI_DataSize_8b,
-		.SPI_CPOL = SPI_CPOL_Low,
-		.SPI_CPHA = SPI_CPHA_1Edge,
-		.SPI_NSS = SPI_NSS_Soft,
-		.SPI_FirstBit = SPI_FirstBit_MSB,
-		.SPI_CRCPolynomial = 7,
-	};
-
-    // Initializes only GPIOs of SPI port
-	vsnSPI_initHW(SPI_PORT);
-
-    //RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
-
-    //SPI init for CC1101 radio
-    vsnSPI_initCommonStructure(
-        CC1101_SPI,
-        SPI_PORT,
-        &spiConfig,
-        CC1101_CSN_PIN,
-        CC1101_CSN_PORT,
-        RF2XX_SPI_SPEED     //speed can be the same
-    );
-    vsnSPI_Init(CC1101_SPI, CC1101_spiErrorCallback);
-
-    LOG_INFO("Set CC1101 clock output on pin GDO0 (PA2 on STM) \n");
-
-    CC1101_set_clock_output();
-
-    // Give SPI control back to rf2xx
-    vsnSPI_deInit(CC1101_SPI);
-}
-#endif
-
-
 int
 rf2xx_init(void)
 {
     LOG_DBG("%s\n", __func__);
-
-#if (AT86RF2XX_BOARD_ISMTV_V1_0 || AT86RF2XX_BOARD_ISMTV_V1_1)
-    configure_cc1101();
-#endif
 
     // Initialize I/O
     rf2xx_initHW();
 
     // Reset internal and hardware states
 	rf2xx_reset();
-
-
 
 	// Start Contiki process which will take care of received packets
 	process_start(&rf2xx_process, NULL);
@@ -707,7 +642,7 @@ set_value(radio_param_t param, radio_value_t value)
             bool pollMode = (value & RADIO_RX_MODE_POLL_MODE) > 0;
 
             if (addrFilter != (RF2XX_AACK && !RF2XX_PROMISCOUS_MODE)) {
-                LOG_ERR("Invalid ADDR_FILTER settings\n");
+                //LOG_ERR("Invalid ADDR_FILTER settings\n");
             }
 
             if (aackMode != RF2XX_AACK) {
@@ -810,128 +745,3 @@ const struct radio_driver rf2xx_driver = {
 	.get_object = get_object,
 	.set_object = set_object,
 };
-
-
-
-void
-CC1101_regWrite(uint8_t addr, uint8_t value)
-{
-    vsnSPI_ErrorStatus status;
-    uint8_t dummy __attribute__((unused));
-    uint8_t state;
-
-    status = CC1101_clear_CS();
-    ASSERT(VSN_SPI_SUCCESS == status);
-
-    status = CC1101_set_CS();
-        ASSERT(VSN_SPI_SUCCESS == status);
-
-        int count = 0;			
-			while((GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_6)) && (count < 200000))	
-					count++;										
-			if(count >= 200000){ 							
-				LOG_ERR("CC1101_regWrite: MISO is not low! \n");											
-			}	
-
-    status = vsnSPI_pullByteTXRX(CC1101_SPI, addr , &state);
-        if (VSN_SPI_SUCCESS != status) LOG_WARN("ERR while sending\n");
-        LOG_DBG("regWrite address state is 0x%02x  \n",state);
-
-    status = vsnSPI_pullByteTXRX(CC1101_SPI, value, &state);
-        if (VSN_SPI_SUCCESS != status) LOG_WARN("ERR while receiving\n");
-        LOG_DBG("regWrite data state is 0x%02x  \n",state);
-
-    status = CC1101_clear_CS();
-        ASSERT(VSN_SPI_SUCCESS == status);
-        
-}
-
-void
-CC1101_reset(void){
-    vsnSPI_ErrorStatus status;
-    uint8_t dummy __attribute__((unused));
-
-    //SCLK = 1 and MOSI = 0
-	GPIO_SetBits(GPIOA, GPIO_Pin_5);
-	GPIO_ResetBits(GPIOA, GPIO_Pin_7);
-
-    //Strobe CS low/high
-	GPIO_SetBits(GPIOB, GPIO_Pin_9);
-	vsnTime_delayUS(10);
-	GPIO_ResetBits(GPIOB, GPIO_Pin_9);
-	vsnTime_delayUS(10); 
-
-    //Hold CS low for at least 40us
-	GPIO_SetBits(GPIOB, GPIO_Pin_9);
-	vsnTime_delayUS(100); 
-
-    //Pull CS low and wait for MISO to go low
-	GPIO_ResetBits(GPIOB, GPIO_Pin_9);
-
-	int count = 0;
-			while((GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_6)) && (count < 200000))	
-					count++;										
-			if(count >= 200000){ 							
-				LOG_ERR("CC1101_reset: MISO is not low!\n");												
-			}		
-
-	vsnTime_delayUS(300);
-
-    status = CC1101_set_CS();
-    ASSERT(VSN_SPI_SUCCESS == status);
-       
-        count = 0;			
-			while((GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_6)) && (count < 200000))	
-					count++;										
-			if(count >= 200000){ 							
-				LOG_ERR("CC1101_reset: MISO is not low! \n");											
-			}
-
-    //Isue SRES (0x30) strobe on MOSI line
-    status = vsnSPI_pullByteTXRX(CC1101_SPI, 0x30 , &dummy);
-        ASSERT(VSN_SPI_SUCCESS == status);
-    
-    status = CC1101_clear_CS();
-        ASSERT(VSN_SPI_SUCCESS == status);
-
-	
-    //When MISO goes low again, reset is complete
-        count = 0;    
-			while((GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_6)) && (count < 500000))	
-					count++;										
-			if(count >= 500000){ 							
-				LOG_ERR("CC1101_reset: MISO is not low!\n");												
-			}	
-
-	vsnTime_delayUS(300);
-
-    LOG_INFO("Radio reset complete!\n");
-}
-
-// Set clock output on pin GDO0 of radio CC1101 to be 13.5 MHz
-// For other possible freq see datasheet of the radio
-void
-CC1101_set_clock_output(void){
-    vsnSPI_ErrorStatus status;
-
-    //CS low GPIO_ResetBits(GPIOB, GPIO_Pin_9);
-    status = CC1101_set_CS();
-    ASSERT(VSN_SPI_SUCCESS == status);
-
-    if(GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_6) == 0){
-        //Radio is allready in IDLE state - we can change the register value
-
-        // Set GDO0 output pin to desire freq (0x32 = 13.5MHz)
-        CC1101_regWrite(0x02, 0x32);
-    }
-    else{
-        // Frist reset the radio and then set the freq
-        CC1101_reset();
-        CC1101_regWrite(0x02, 0x32);
-    }
-    status = CC1101_clear_CS();
-
-    vsnTime_delayUS(100);
-
-    if(status == VSN_SPI_SUCCESS) LOG_INFO("GDO0 output freq set to 13.5 MHz\n");
-}
