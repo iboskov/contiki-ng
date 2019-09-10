@@ -706,10 +706,11 @@ get_object(radio_param_t param, void *dest, size_t size)
 		    *(rtimer_clock_t *)dest = rxFrame.timestamp;
 		    return RADIO_RESULT_OK;
 
-		//#if MAC_CONF_WITH_TSCH
-		//case RADIO_CONST_TSCH_TIMING:
-		//	*(const uint16_t **)dest = TSCH_CONF_DEFAULT_TIMESLOT_TIMING;
-		//#endif
+        #if MAC_CONF_WITH_TSCH
+		case RADIO_CONST_TSCH_TIMING:
+            LOG_INFO("Reading radio's RADIO_CONST_TSCH_TIMING matrix\n");
+			*(const uint16_t **)dest = RF2XX_CONF_DEFAULT_TIMESLOT_TIMING;
+        #endif
 
 		default:
 			return RADIO_RESULT_NOT_SUPPORTED;

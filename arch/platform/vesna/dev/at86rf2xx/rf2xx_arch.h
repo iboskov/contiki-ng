@@ -1,6 +1,8 @@
 #ifndef RF2XX_ARCH_H_
 #define RF2XX_ARCH_H_
 
+#include <stdint.h>
+
 #define RF2XX_MAX_FRAME_SIZE	(127)
 #define RF2XX_MIN_FRAME_SIZE	(3)
 #define RF2XX_CRC_SIZE			(2)
@@ -52,10 +54,11 @@
 // Real slot duration is then : 9994.506835937 usec
 // Target - Real duration = 5.49316 usec
 // TSCH_CONF_BASE_DRIFT_PPM 549
- 
+
+extern const uint16_t tsch_timeslot_timing_rf2xx_10000us_250kbps[];
 
 // TSCH timeslot timing (default is: 10ms tsch_timeslot_timing_us_10000)
-#define RF2XX_CONF_DEFAULT_TIMESLOT_TIMING	(tsch_timeslot_timing_us_20000)
+#define RF2XX_CONF_DEFAULT_TIMESLOT_TIMING	(tsch_timeslot_timing_rf2xx_10000us_250kbps)
 
 // TODO: migrate "tsch_timeslot_timing_us_20000" into this file
 #endif
