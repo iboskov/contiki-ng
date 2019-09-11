@@ -3,7 +3,6 @@
 
 #include <stdint.h>
 #include <string.h>
-#include <inttypes.h>
 
 #define CCIF
 #define CLIF
@@ -30,7 +29,8 @@ typedef uint32_t uip_stats_t;
 
 #define PLATFORM_SUPPORTS_BUTTON_HAL  (1)
 
-
+// Enable/disable stack check.
+// TODO: linker script doesn't define proper pointers to enable this feature
 #define STACK_CHECK_CONF_ENABLED	(0)
 
 #ifdef AT86RF2XX

@@ -30,7 +30,7 @@
 // Maximum supported speed is 8MHz
 #define RF2XX_SPI_SPEED		((uint32_t)8000000)
 
-#define RSSI_BASE_VAL   (-91)
+#define RSSI_BASE_VAL   	((int8_t)-91)
 
 
 // Board specific configurations
