@@ -3,12 +3,30 @@
 
 #include "sys/rtimer.h"
 
+/*
+If radio is on ISMTV board: rtimer has 65.533 kHz --> RTIMER_ARCH_SECOND = 65533
+Drift calculation:
+    Slot length 10000 usec, which gives us 655 ticks (from macro US_TO_RTIMERTICKS)
+    Tick duration: 15.2594875864 us
+    Real slot duration is then : 9994.96436 usec
+    Target - real duration = 5.03564 us
+    RTIMER_ARCH_DRIFT_PPM = 504
+ 
+If radio is not on ISMTV board: rtimer has 65.503 kHz --> RTIMER_ARCH_SECOND = 65503
+Drift calculation:
+    Slot length 10000 usec, which gives us 655 ticks (from macro US_TO_RTIMERTICKS)
+    Tick duration: 15.2664763445 us
+    Real slot duration is then : 9999.54200 usec
+    Target - real duration = 0.4580 us
+    RTIMER_ARCH_DRIFT_PPM = 46
+ */
+
 #if (AT86RF2XX_BOARD_ISMTV_V1_0 || AT86RF2XX_BOARD_ISMTV_V1_1)
     #define RTIMER_ARCH_SECOND      (65533)
-    #define RTIMER_ARCH_PPM         (594) // +1500 //TODO fix it if we have external timer source
+    #define RTIMER_ARCH_DRIFT_PPM   (503) 
 #else
     #define RTIMER_ARCH_SECOND		(65503)
-    #define RTIMER_ARCH_PPM         (594) 
+    #define RTIMER_ARCH_DRIFT_PPM   (46) 
 #endif
 
 
