@@ -60,5 +60,4 @@ extern const uint16_t tsch_timeslot_timing_rf2xx_10000us_250kbps[];
 // TSCH timeslot timing (default is: 10ms tsch_timeslot_timing_us_10000)
 #define RF2XX_CONF_DEFAULT_TIMESLOT_TIMING	(tsch_timeslot_timing_rf2xx_10000us_250kbps)
 
-// TODO: migrate "tsch_timeslot_timing_us_20000" into this file
 #endif
