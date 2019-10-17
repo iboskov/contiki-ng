@@ -408,6 +408,7 @@ STATS_print_packet_stats(void){
     if(tb.count != 0){
         while(tb.count != 0){
             STATS_get_tx_packet(&tp);
+            printf("\n");
             printf("T%d %d ",tp.count, tp.unicast);
             switch(tp.type){
                 case 0:
@@ -422,12 +423,12 @@ STATS_print_packet_stats(void){
             }
             printf("%ld:%ld\n", tp.timestamp_s, tp.timestamp_us);
             printf("C%d L%d S%d | P%d\n", tp.channel, tp.len, tp.sqn, tp.power);
-            printf("\n");
         }
     }
     if(rb.count != 0){  
         while(rb.count != 0){
             STATS_get_rx_packet(&rp);
+            printf("\n");
             printf("R%d ",rp.count);
             switch(rp.type){
                 case 0:
@@ -442,7 +443,6 @@ STATS_print_packet_stats(void){
             }
             printf("%ld:%ld\n", rp.timestamp_s, rp.timestamp_us);
             printf("C%d L%d S%d | R%d Q%d\n",rp.channel, rp.len, rp.sqn, rp.rssi, rp.lqi);
-            printf("\n");
         }
     }
 
@@ -595,6 +595,7 @@ STATS_print_background_noise(void){
 
                 // If there is data in buffer            
                 if(buffer[i].count != 0){
+                    printf("\n");
                     printf("CH%d:",(i+11));
                     printf("(%d)", buffer[i].count);
                     do{
@@ -604,7 +605,6 @@ STATS_print_background_noise(void){
                         printf(" %d", data);
 
                     }while(buffer[i].count != 0);
-                    printf("\n");
                 }
             }
         }
@@ -671,6 +671,7 @@ STATS_display_driver_stats(void){
  */
 void
 STATS_print_driver_stats(void){
+    printf("\n");
     printf("TX suc%ld err%ld  cnt: B%ld D%ld A%ld\n",
             RF2XX_STATS_GET(txCount),
             RF2XX_STATS_GET(txError),

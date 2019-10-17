@@ -62,12 +62,16 @@ PROCESS_THREAD(stats_process, ev, data)
 
   printf("***** Start monitoring serial port *****\n");
 
-  STATS_print_help(); 
-
   while(1) {
     i++;
 
   #if RF2XX_CONF_STATS
+
+  // Optional: print help into log file
+    if(i == SECOND){
+      STATS_print_help();
+    }
+
     // Every 1ms easure rssi and store it into buffer
     STATS_update_background_noise(STATS_BG_NOISE_BUFF_CAPACITY);
 
@@ -81,12 +85,14 @@ PROCESS_THREAD(stats_process, ev, data)
       STATS_print_packet_stats();
     }
 
-    // After 120 seconds 
-    if((i%(SECOND * 600)) == 0){
+    // After 10 min 
+    if(i == (SECOND * 600)){
       STATS_print_driver_stats();
       printf("===== Stop monitoring serial port =====\n");
     }
+    
   #endif
+
     /* Wait for the periodic timer to expire and then restart the timer. */
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
     etimer_reset(&timer);
@@ -102,6 +108,7 @@ STATS_print_help(void){
 
   rf2xx_driver.get_object(RADIO_PARAM_64BIT_ADDR, &addr, 8);
 
+  printf("\n"); 
   printf("Device ID: ");
   for(int j=0; j<8; j++){
     printf("%X",addr[j]);
@@ -109,7 +116,7 @@ STATS_print_help(void){
   printf("\n"); 
   printf("-------------------------------------------------------------------------\n");
   printf("\n");
-  printf("       DESCRIPTION of this mumbojumbo\n");
+  printf("       DESCRIPTION\n");
   printf("-------------------------------------------------------------------------\n");
   printf("CH[cc]([xxx]): [v] [v] [v]\n");
 

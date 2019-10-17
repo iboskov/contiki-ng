@@ -1,11 +1,11 @@
-# Test serial inputa 
+# Monitor serial input from given port and store it into given file
 
 import sys
 import argparse
 import serial
 from datetime import datetime
 
-LINES_TO_READ = 1000
+LINES_TO_READ = 5000
 
 DEFAULT_FILE_NAME = "rf2xx_stats.txt"
 
@@ -36,6 +36,10 @@ parser.add_argument("-p",
 parser.add_argument("-s", 
                     "--skip",   
                     help="skip waiting for the start sequence", 
+                    action="store_true")
+parser.add_argument("-r",
+                    "--root",
+                    help="set device as root of the netwrok",
                     action="store_true")
 
 args = parser.parse_args()
@@ -77,9 +81,7 @@ else:
     filename = args.output
     print("Storing into: " + filename)
 
-
-# (optional) Write first lines into file 
-
+# (optional) Write first lines into it
 file = open(filename, "w")
 file.write(str(datetime.now())+"\n")
 file.write("------------------------------------------------------------------------- \n")
@@ -88,7 +90,7 @@ file.write("--------------------------------------------------------------------
 file.close()
 
 # ----------------------------------------------------------------------
-# Find start sequence
+# Find start sequence '*'
 # ----------------------------------------------------------------------
 if(not args.skip):
     print("Waiting for start sequence (reset the node)...")
@@ -101,34 +103,56 @@ if(not args.skip):
             print("\n Keyboard interrupt!..Exiting now")
             sys.exit(1)
 
+# ----------------------------------------------------------------------
+# Set device as root of the network via serial CLI
+# ----------------------------------------------------------------------
+if(args.root):
+    print("Set device as DAG root")
+    try:
+        ser.write("rpl-set-root 1 \n".encode("ASCII"))
+    except:
+        print("Serial write error!")
+    
+    # After device is set as root it responds with two lines, which we
+    # do not want into log file...the loop below waits for them and 
+    # then proceeds to logging
+    while(True):
+        try:
+            value = ser.readline()
+            if(chr(value[0]) == '#'):
+                break
+        except KeyboardInterrupt:
+            print("\n Keyboard interrupt!..Exiting now")
+            sys.exit(1)
+
+
 print("Start logging serial input!") 
 
 # Open file to append serial input to it
 file = open(filename, "a")
 
 # ----------------------------------------------------------------------
-# Read input lines while LINES_TO_READ
+# Read input lines while LINES_TO_READ or until stop sequence '='
 # ----------------------------------------------------------------------
 i = 1
 try:
     while(i <= LINES_TO_READ):
         # Read one line (until \n char)
-        value = ser.read_until(b'\n', None) #expected char, size to rec
-        #value = ser.readline()             #same solution
+        value = ser.read_until(b'\n', None)
 
         # --------------------------------------------------------------
-        # If stop sequence found, exit monitor
+        # If stop sequence '=' found, exit monitor
         # --------------------------------------------------------------
         if(chr(value[0]) == '='):
             print("Found stop sequence!..stored " + str(i) + " lines.")
             break
 
-         # Store value into file
+        # Store value into file
         value= value.decode("UTF-8")       
         file.write(str(value))
 
         # Update status line in terminal
-        print("Line " + str(i) +"/" + str(LINES_TO_READ), end="\r")
+        print("Line " + str(i) +"/(" + str(LINES_TO_READ) +")", end="\r")
         i = i +1
     
     print("")
@@ -146,6 +170,3 @@ except serial.SerialException:
 finally:
     file.close()
     ser.close()
-
-
-
