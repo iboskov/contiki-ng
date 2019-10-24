@@ -30,19 +30,13 @@
  *
  */
 
-/**
- * \file
- *         A very simple Contiki application showing how Contiki programs look
- * \author
- *         Adam Dunkels <adam@sics.se>
- */
-
 #include "contiki.h"
 #include "arch/platform/vesna/dev/at86rf2xx/rf2xx.h"
 #include "arch/platform/vesna/dev/at86rf2xx/rf2xx_stats.h"
 
 #define SECOND 1000
-#define STATS_BG_NOISE_BUFF_CAPACITY 1100
+#define STATS_BG_NOISE_BUFF_CAPACITY 503
+
 uint32_t i = 0;
 
 void STATS_print_help(void);
@@ -67,25 +61,32 @@ PROCESS_THREAD(stats_process, ev, data)
 
   #if RF2XX_CONF_STATS
 
-  // Optional: print help into log file
-    if(i == SECOND){
+    // Wait for 1 second before start of the app
+    if(i <= (SECOND)){
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+      etimer_reset(&timer);
+      continue;
+    }
+
+    // Optional: print help into log file
+    if(i == (SECOND + 1)){
       STATS_print_help();
     }
 
-    // Every 1ms easure rssi and store it into buffer
+    // Every 1ms measure rssi and store it into buffer
     STATS_update_background_noise(STATS_BG_NOISE_BUFF_CAPACITY);
-
-    // Every 1s
-    if(i%SECOND == 0) {
+  
+    // Every half second print measured values and clear the buffer
+    if(i%(SECOND/2) == 0) {
       STATS_print_background_noise();
     }
 
-    // Every 10s
+    // Every 10 seconds print packet statistics and clear the buffer
     if((i%(SECOND * 10)) == 0){
       STATS_print_packet_stats();
     }
 
-    // After 10 min 
+    // After 10 min send stop sequence ('=') and print driver statistics
     if(i == (SECOND * 600)){
       STATS_print_driver_stats();
       printf("===== Stop monitoring serial port =====\n");
@@ -114,16 +115,19 @@ STATS_print_help(void){
     printf("%X",addr[j]);
   }
   printf("\n"); 
-  printf("-------------------------------------------------------------------------\n");
+  printf("----------------------------------------------------------------------------\n");
   printf("\n");
   printf("       DESCRIPTION\n");
-  printf("-------------------------------------------------------------------------\n");
-  printf("CH[cc]([xxx]): [v] [v] [v]\n");
+  printf("----------------------------------------------------------------------------\n");
+  printf("CH[cc][xxx]([ss:us]): (tt)[v] (tt)[v] (tt)[v] ...\n");
 
   printf("cc   - Channel number, where RSSI is measured \n");
   printf("xxx  - Count of measured values \n");
-  printf("v    - Actual RSSI values \n");
-  printf("-------------------------------------------------------------------------\n");
+  printf("ss   - Timestamp in seconds \n");
+  printf("us   - Timestamp in micro seconds \n");
+  printf("tt   - Deviation from first measurment in micro seconds\n");
+  printf("v    - Measured RSSI values at theirs timestamp \n");
+  printf("----------------------------------------------------------------------------\n");
   printf("T[n] [u] [t] [0xaaaa] \n");
   printf("[s]:[us]\n");
   printf("C[cc] L[ll] S[ss] | P[pp] \n");
@@ -138,7 +142,7 @@ STATS_print_help(void){
   printf("ll   - Packet length in bytes \n");
   printf("ss   - Sequence number \n");
   printf("pp   - Transmision power (0 = 3dBm)\n");
-  printf("-------------------------------------------------------------------------\n");
+  printf("----------------------------------------------------------------------------\n");
   printf("R[n] [t] [0xaaaa] \n");
   printf("[s]:[us]\n");
   printf("C[cc] L[ll] S[ss] | R[rr] Q[qq] \n");
@@ -153,10 +157,10 @@ STATS_print_help(void){
   printf("ss   - Sequence number \n");
   printf("rr   - RSSI when packet was received\n");
   printf("qq   - LQI when packet was received \n");
-  printf("-------------------------------------------------------------------------\n");
+  printf("----------------------------------------------------------------------------\n");
   printf("\n");
   printf("On the end of file, there is a count of all received and transmited packets. \n");
-  printf("-------------------------------------------------------------------------\n");
+  printf("----------------------------------------------------------------------------\n");
 }
 
 

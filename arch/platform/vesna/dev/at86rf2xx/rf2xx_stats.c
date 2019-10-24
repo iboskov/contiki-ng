@@ -472,7 +472,7 @@ static buffer_t buffer[16];
 uint8_t
 STATS_init_channel_buffer(buffer_t *b, uint8_t ch, uint16_t capacity){
 
-    b[ch].size = sizeof(int);
+    b[ch].size = sizeof(bgNoise_t);
     b[ch].buffer_start = malloc(capacity * b[ch].size );
 
     if(b[ch].buffer_start == NULL){
@@ -504,14 +504,14 @@ STATS_free_channel_buffer(buffer_t *b, uint8_t ch){
  * @return 1 if success, 0 if not
  */
 uint8_t
-STATS_put_channel_rssi(buffer_t *b, uint8_t ch, int *rssi){
+STATS_put_channel_rssi(buffer_t *b, uint8_t ch, bgNoise_t *bgn){
 
     if((b[ch].count == b[ch].capacity) || (b[ch].head == b[ch].tail-(b[ch].size/4))){
         LOG_WARN("RSSI Buffer on channel %d is full! \n", ch+11);
         return 0;
     }
    
-    memcpy(b[ch].head, rssi, b[ch].size);
+    memcpy(b[ch].head, bgn, b[ch].size);
 
     b[ch].head = b[ch].head + (b[ch].size/4);
     if (b[ch].head == b[ch].buffer_end){
@@ -526,13 +526,13 @@ STATS_put_channel_rssi(buffer_t *b, uint8_t ch, int *rssi){
  * @return 1 if success, 0 if not
  */
 uint8_t
-STATS_get_channel_rssi(buffer_t *b, uint8_t ch, int *rssi){
+STATS_get_channel_rssi(buffer_t *b, uint8_t ch, bgNoise_t *bgn){
 
     if(b[ch].count == 0){
         LOG_WARN("RSSI buffer on channel %d is empty!\n", ch);
         return 0;
     }
-    memcpy(rssi, b[ch].tail, b[ch].size);
+    memcpy(bgn, b[ch].tail, b[ch].size);
 
     b[ch].tail = b[ch].tail + (b[ch].size/4);    
     if (b[ch].tail == b[ch].buffer_end){
@@ -553,10 +553,12 @@ static uint8_t suc_update = 1;// Added so it won't print "Buffer full" all the t
 void 
 STATS_update_background_noise(uint16_t capacity){
     uint8_t suc_init = 0;
+    bgNoise_t bgn;
 
     // Channel 11 is stored in channel_buffer[0], 12->[1] and so on
     uint8_t channel = bitRead(SR_CHANNEL) - 11;     
-    int rssi = bitRead(SR_RSSI);
+    bgn.rssi = bitRead(SR_RSSI);
+    vsnTime_preciseUptime(&bgn.timestamp_s, &bgn.timestamp_us);
 
     if(channel < 16 && channel >= 0){
         
@@ -566,11 +568,11 @@ STATS_update_background_noise(uint16_t capacity){
             // Init channel
             suc_init = STATS_init_channel_buffer(buffer, channel, capacity);
             // Store the RSSI value
-            if(suc_init) suc_update = STATS_put_channel_rssi(buffer, channel, &rssi);  
+            if(suc_init) suc_update = STATS_put_channel_rssi(buffer, channel, &bgn);  
        
         } else {
             // Just store the RSSI value
-            if(suc_update) suc_update = STATS_put_channel_rssi(buffer, channel, &rssi);   
+            if(suc_update) suc_update = STATS_put_channel_rssi(buffer, channel, &bgn);   
         }
     }
 }
@@ -583,10 +585,10 @@ STATS_update_background_noise(uint16_t capacity){
 */
 void
 STATS_print_background_noise(void){
-    int data;
+    bgNoise_t data;
+    int rssi, first_us, first_s;
 
     if(channel_stats_index != 0){
-
         // Go through all channels
         for(uint8_t i=0; i<16; i++){
 
@@ -597,14 +599,36 @@ STATS_print_background_noise(void){
                 if(buffer[i].count != 0){
                     printf("\n");
                     printf("CH%d:",(i+11));
-                    printf("(%d)", buffer[i].count);
-                    do{
-                        // Print its RSSI
-                        STATS_get_channel_rssi(buffer, i, &data);
-                        data =(3 * (data - 1) + RSSI_BASE_VAL);
-                        printf(" %d", data);
+                    printf("[%3d]", buffer[i].count);
 
-                    }while(buffer[i].count != 0);
+                    // Get first measurment - its timestamp
+                    STATS_get_channel_rssi(buffer, i, &data);
+                    printf("(%lds:%ldus)  ", data.timestamp_s, data.timestamp_us);
+
+                    first_us = data.timestamp_us;
+                    first_s = data.timestamp_s;
+
+                    // Print firs measured RSSI
+                    rssi =(3 * (data.rssi - 1) + RSSI_BASE_VAL);
+                    printf("(0)%d ", rssi);
+
+                    // Go through buffer
+                    while(buffer[i].count != 0){
+                        
+                        STATS_get_channel_rssi(buffer, i, &data);
+
+                            // Print deviation from first timestamp
+                            if(data.timestamp_s > first_s){
+                                // If seconds changed during measurments, us counter
+                                // starts counting from zero...its max value is 1000 000
+                                printf("(%ld)", ((1000000 - first_us) + data.timestamp_us));
+                            } else{
+                                printf("(%ld)", (data.timestamp_us - first_us));
+                            }
+                            // Print its RSSI
+                            rssi =(3 * (data.rssi - 1) + RSSI_BASE_VAL);
+                            printf("%d ", rssi);
+                    }
                 }
             }
         }

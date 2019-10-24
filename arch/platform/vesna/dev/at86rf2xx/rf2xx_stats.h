@@ -70,10 +70,16 @@
 	* each bit representing its channel. 
 	*/
 
+	typedef struct{
+		uint32_t timestamp_s;
+		uint32_t timestamp_us;
+		int rssi;
+	} bgNoise_t;
+
 	uint8_t STATS_init_channel_buffer(buffer_t *b, uint8_t ch, uint16_t capacity);
 	void    STATS_free_channel_buffer(buffer_t *b, uint8_t ch);
-	uint8_t STATS_get_channel_rssi(buffer_t *b, uint8_t ch, int *rssi);
-	uint8_t STATS_put_channel_rssi(buffer_t *b, uint8_t ch, int *rssi);
+	uint8_t STATS_get_channel_rssi(buffer_t *b, uint8_t ch, bgNoise_t *bgn);
+	uint8_t STATS_put_channel_rssi(buffer_t *b, uint8_t ch, bgNoise_t *bgn);
 
 	void STATS_update_background_noise(uint16_t capacity);
 	void STATS_print_background_noise(void);
