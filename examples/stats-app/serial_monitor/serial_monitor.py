@@ -5,7 +5,7 @@ import argparse
 import serial
 from datetime import datetime
 
-LINES_TO_READ = 5000
+LINES_TO_READ = 7000
 
 DEFAULT_FILE_NAME = "rf2xx_stats.txt"
 
@@ -39,7 +39,7 @@ parser.add_argument("-s",
                     action="store_true")
 parser.add_argument("-r",
                     "--root",
-                    help="set device as root of the netwrok",
+                    help="set device as root of the network",
                     action="store_true")
 
 args = parser.parse_args()
@@ -55,7 +55,6 @@ if(not args.port):
             ser = serial.Serial(port, BAUD, BYTESIZE, PARITY, STOPBIT)
             print("Serial monitor opened on port: " + port)
             break
-
         except:
             print("No serial port connected or all in use!..Exiting now")
             sys.exit(1)
@@ -65,7 +64,6 @@ else:
         port = "/dev/" + args.port
         ser = serial.Serial(port, BAUD, BYTESIZE, PARITY, STOPBIT)
         print("Serial monitor opened on port: " + port)
-
     except:
         print("Serial port not connected or in use!..Exiting now")
         sys.exit(1)
@@ -82,11 +80,13 @@ else:
     print("Storing into: " + filename)
 
 # (optional) Write first lines into it
-file = open(filename, "w")
+file = open(filename, mode="w", encoding="UTF-8")
 file.write(str(datetime.now())+"\n")
-file.write("------------------------------------------------------------------------- \n")
+file.write("----------------------------------------------------------------------------------------------- \n")
 file.write("Serial input from port:" + port + "\n")
-file.write("------------------------------------------------------------------------- \n")
+if(args.root):
+    file.write("Device is root of the DAG network! \n")
+file.write("----------------------------------------------------------------------------------------------- \n")
 file.close()
 
 # ----------------------------------------------------------------------
@@ -102,6 +102,8 @@ if(not args.skip):
         except KeyboardInterrupt:
             print("\n Keyboard interrupt!..Exiting now")
             sys.exit(1)
+        except serial.SerialException:
+            print("\n Serial Error...read line with no data")
 
 # ----------------------------------------------------------------------
 # Set device as root of the network via serial CLI
@@ -111,7 +113,7 @@ if(args.root):
     try:
         ser.write("rpl-set-root 1 \n".encode("ASCII"))
     except:
-        print("Serial write error!")
+        print("Error writing to device!")
     
     # After device is set as root it responds with two lines, which we
     # do not want into log file...the loop below waits for them and 
@@ -126,7 +128,7 @@ if(args.root):
             sys.exit(1)
 
 
-print("Start logging serial input!") 
+print("Start logging serial input") 
 
 # Open file to append serial input to it
 file = open(filename, "a")
@@ -148,24 +150,25 @@ try:
             break
 
         # Store value into file
-        value= value.decode("UTF-8")       
+        file.write("[" + str(datetime.now().time())+"]: ")
+        value= value.decode("UTF-8")
         file.write(str(value))
 
         # Update status line in terminal
         print("Line " + str(i) +"/(" + str(LINES_TO_READ) +")", end="\r")
-        i = i +1
+        i += 1
     
     print("")
-    print("Done!")
+    print("Done!..Exiting serial monitor")
 
 except KeyboardInterrupt:
-    print("\n Keyboard interrupt!..Exiting now")
+    print("\n Keyboard interrupt!..Exiting serial monitor")
+
+except serial.SerialException:
+    print("Error opening port!..Exiting serial monitor")
 
 except IOError:
-    print("\n Serial port disconnected!.. Exiting now")
-
-except serial.SerialException: 
-    print("Error opening port!..Exiting now")
+    print("\n Serial port disconnected!.. Exiting serial monitor")
 
 finally:
     file.close()
