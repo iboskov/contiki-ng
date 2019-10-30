@@ -35,6 +35,7 @@
 #include "dev/serial-line.h"
 #include "arch/platform/vesna/dev/at86rf2xx/rf2xx.h"
 #include "arch/platform/vesna/dev/at86rf2xx/rf2xx_stats.h"
+#include "net/ipv6/uip.h"
 
 #define SECOND 1000
 #define STATS_BG_NOISE_BUFF_CAPACITY 503
@@ -43,6 +44,7 @@ uint32_t i = 0;
 
 void STATS_print_help(void);
 void STATS_input_command(char *data);
+void STATS_set_device_as_root(void);
 
 /*---------------------------------------------------------------------------*/
 PROCESS(stats_process, "Stats app process");
@@ -70,6 +72,7 @@ PROCESS_THREAD(stats_process, ev, data)
   PROCESS_BEGIN();
 
   printf("*** Got start sequence --> starting app! \n");
+  i = 0;
 
   etimer_set(&timer, 1);  //ms = 1, sec = 1000
 
@@ -99,6 +102,7 @@ PROCESS_THREAD(stats_process, ev, data)
     if(i == (SECOND * 600)){
       STATS_print_driver_stats();
       printf("===== Stop monitoring serial port =====\n");
+      PROCESS_EXIT();
     }
   #endif
 
@@ -113,16 +117,37 @@ PROCESS_THREAD(stats_process, ev, data)
 
 void
 STATS_input_command(char *data){
-        char cmd = data[0];
-        switch(cmd){
-          case '*':
-            process_start(&stats_process, NULL);
-            break;
-          
-          case 'r':
-            // rpl-set-root 1
-            break;
-        }
+    char cmd = data[0];
+    switch(cmd){
+      case '*':
+        process_start(&stats_process, NULL);
+        break;
+      
+      case 'r':
+        STATS_set_device_as_root();
+        break;
+      
+      case '=':
+        process_exit(&stats_process);
+        STATS_print_driver_stats();
+        printf("===== Stop monitoring serial port =====\n");
+        // TODO: Empty buffers and reset stats counter
+    }
+}
+
+void
+STATS_set_device_as_root(void){
+  static uip_ipaddr_t prefix;
+  const uip_ipaddr_t *default_prefix = uip_ds6_default_prefix();
+
+  uip_ip6addr_copy(&prefix, default_prefix);
+
+  if(!NETSTACK_ROUTING.node_is_root()) {
+      NETSTACK_ROUTING.root_set_prefix(&prefix, NULL);
+      NETSTACK_ROUTING.root_start();
+    } else {
+      printf("Node is already a DAG root\n");
+    }
 }
 
 void

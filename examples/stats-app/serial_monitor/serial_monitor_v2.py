@@ -33,10 +33,6 @@ parser.add_argument("-p",
                     given, program will find it automaticly""",
                     type=str, 
                     required=False)
-parser.add_argument("-s", 
-                    "--skip",   
-                    help="skip waiting for the start sequence", 
-                    action="store_true")
 parser.add_argument("-r",
                     "--root",
                     help="set device as root of the network",
@@ -95,7 +91,7 @@ file.close()
 if(args.root):
     print("Set device as DAG root")
     try:
-        ser.write("rpl-set-root 1 \n".encode("ASCII"))
+        ser.write("root \n".encode("ASCII"))
     except:
         print("Error writing to device!")
     
@@ -111,7 +107,7 @@ except:
 # ----------------------------------------------------------------------
 # Wait for response (again '*' character)
 # ----------------------------------------------------------------------
-print("Waiting for response")
+print("Waiting for response...")
 while(True):
     try:
         value = ser.readline()
@@ -122,7 +118,7 @@ while(True):
         sys.exit(1)
 
 
-print("Start logging serial input") 
+print("Start logging serial input:") 
 
 # Open file to append serial input to it
 file = open(filename, "a")
@@ -156,7 +152,32 @@ try:
     print("Done!..Exiting serial monitor")
 
 except KeyboardInterrupt:
-    print("\n Keyboard interrupt!..Exiting serial monitor")
+    # -------------------------------------------------------------------
+    # Send stop sequence '*'
+    # -------------------------------------------------------------------
+    print("\n Keyboard interrupt!..send stop sequence")
+    try:
+        ser.write("===Stop the app===\n".encode("ASCII"))
+    except:
+        print("Error writing to device!")
+
+    # -------------------------------------------------------------------
+    # Get last data ("driver statistics") before closing the monitor
+    # -------------------------------------------------------------------
+    while(True):
+        try:
+            value = ser.readline()
+            if(chr(value[0]) == '='):
+                break
+            else:
+                file.write("[" + str(datetime.now().time())+"]: ")
+                value= value.decode("UTF-8")
+                file.write(str(value))
+        except:
+            print("Error closing monitor")  
+            break
+    print("Exiting serial monitor")
+
 
 except serial.SerialException:
     print("Error opening port!..Exiting serial monitor")
