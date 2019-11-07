@@ -4,17 +4,38 @@ import sys
 import argparse
 import serial
 from datetime import datetime
+from timeit import default_timer as timer
 
 LINES_TO_READ = 7000
 
 DEFAULT_FILE_NAME = "rf2xx_stats.txt"
 
-baseport = "/dev/ttyUSB"
+BASEPORT = "/dev/ttyUSB"
 BAUD = 112500
 PARITY = serial.PARITY_NONE
 STOPBIT = serial.STOPBITS_ONE
 BYTESIZE = serial.EIGHTBITS
 
+gotResponse = False
+
+def wait_response(max_time):
+    startTime = timer()
+    
+    while((timer() - startTime) < max_time):   #TODO potestirej se malu ta sjt
+        try:
+            value = ser.readline()
+            if(chr(value[0]) == '*'):
+                gotResponse = True
+                break
+        except KeyboardInterrupt:
+            print("\n Keyboard interrupt!..Exiting now")
+            sys.exit(1)
+
+def send_cmd(cmd):
+    try:
+        ser.write((cmd + "\n").encode("ASCII"))
+    except:
+        print("Error writing to device!")
 # ----------------------------------------------------------------------
 # Argument parser for selection output text file - where to store data
 # ----------------------------------------------------------------------
@@ -47,7 +68,7 @@ if(not args.port):
     # Find port automaticly - search for ttyUSB
     for i in range(0, 12):
         try:
-            port = baseport + str(i)
+            port = BASEPORT + str(i)
             ser = serial.Serial(port, BAUD, BYTESIZE, PARITY, STOPBIT)
             print("Serial monitor opened on port: " + port)
             break
@@ -90,42 +111,37 @@ file.close()
 # ----------------------------------------------------------------------
 if(args.root):
     print("Set device as DAG root")
-    try:
-        ser.write("root \n".encode("ASCII"))
-    except:
-        print("Error writing to device!")
+    send_cmd("r")
     
 # ----------------------------------------------------------------------
-# Send start sequence '*'
+# Start the app
 # ----------------------------------------------------------------------
-print("Send start sequence")
-try:
-    ser.write("***Start the app***\n".encode("ASCII"))
-except:
-    print("Error writing to device!")
+print("Send start command")
+send_cmd("*")
 
-# ----------------------------------------------------------------------
-# Wait for response (again '*' character)
-# ----------------------------------------------------------------------
+# Wait for response ('*' character) from Vesna for 3 seconds
 print("Waiting for response...")
-while(True):
-    try:
-        value = ser.readline()
-        if(chr(value[0]) == '*'):
-            break
-    except KeyboardInterrupt:
-        print("\n Keyboard interrupt!..Exiting now")
-        sys.exit(1)
+wait_response(3)
 
+# If device is not responding, try again
+if(not gotResponse):
+    print("No response -> send start cmd again...")
+    send_cmd("=")
+    send_cmd("*")
+    wait_response(3)
 
+if(not gotResponse):
+    print("No response...please reset the device and try again")
+    sys.exit(1)
+
+# ----------------------------------------------------------------------
+# Read input lines while LINES_TO_READ or until stop command '='
+# ----------------------------------------------------------------------
 print("Start logging serial input:") 
 
 # Open file to append serial input to it
 file = open(filename, "a")
 
-# ----------------------------------------------------------------------
-# Read input lines while LINES_TO_READ or until stop sequence '='
-# ----------------------------------------------------------------------
 i = 1
 try:
     while(i <= LINES_TO_READ):
@@ -133,10 +149,10 @@ try:
         value = ser.read_until(b'\n', None)
 
         # --------------------------------------------------------------
-        # If stop sequence '=' found, exit monitor
+        # If stop command '=' found, exit monitor
         # --------------------------------------------------------------
         if(chr(value[0]) == '='):
-            print("Found stop sequence!..stored " + str(i) + " lines.")
+            print("Found stop command!..stored " + str(i) + " lines.")
             break
 
         # Store value into file
@@ -153,13 +169,10 @@ try:
 
 except KeyboardInterrupt:
     # -------------------------------------------------------------------
-    # Send stop sequence '*'
+    # Send stop command '*'
     # -------------------------------------------------------------------
-    print("\n Keyboard interrupt!..send stop sequence")
-    try:
-        ser.write("===Stop the app===\n".encode("ASCII"))
-    except:
-        print("Error writing to device!")
+    print("\n Keyboard interrupt!..send stop command")
+    send_cmd("=")
 
     # -------------------------------------------------------------------
     # Get last data ("driver statistics") before closing the monitor
