@@ -14,6 +14,10 @@ USAGE:
         $ python3 serial_monitor.py -p ttyUSB1 -o root_stats.txt -r
 
 WORKING: 
-    First, run the "serial_monitor", then reset (or flash) Vesna device. Monitor will automaticly search
-    for start sequence (character '*') and will monitor its input until stop sequence (character '=') 
-    or until 'LINES_TO_READ' lines are stored.
+    
+    First turn on (flash) all Vesna devices - they will wait for start command.
+    Then run "Serial_monitor". It will automatically send start command - the nodes will start to logg statistics
+    and send them back to serial monitor.
+    
+    App closes automatically after 10 minutes or after max 7000 lines are stored. User can
+    stop the app any time with "Ctrl+C".
