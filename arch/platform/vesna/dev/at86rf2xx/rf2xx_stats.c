@@ -445,9 +445,19 @@ STATS_print_packet_stats(void){
             printf("C%d L%d S%d | R%d Q%d\n",rp.channel, rp.len, rp.sqn, rp.rssi, rp.lqi);
         }
     }
-
 }
 
+void
+STATS_clear_packet_stats(void){
+    // Reset buffer variables
+    rb.head = rb.buffer_start;
+    rb.tail = rb.buffer_start;
+    rb.count = 0;
+
+    tb.head = tb.buffer_start;
+    tb.tail = rb.buffer_start;
+    tb.count = 0;
+}
 
 
 /* =============================================================================
@@ -496,6 +506,12 @@ STATS_init_channel_buffer(buffer_t *b, uint8_t ch, uint16_t capacity){
 void
 STATS_free_channel_buffer(buffer_t *b, uint8_t ch){
     free(b[ch].buffer_start);
+
+    // Remove channel from channel_index
+    uint16_t tmp = 0x0001;
+    tmp = tmp << ch;
+    tmp = ~tmp;
+    channel_stats_index &= tmp;
 }
 
 /** @brief Put new value into buffer of that channel
@@ -617,23 +633,34 @@ STATS_print_background_noise(void){
                         
                         STATS_get_channel_rssi(buffer, i, &data);
 
-                            // Print deviation from first timestamp
-                            if(data.timestamp_s > first_s){
-                                // If seconds changed during measurments, us counter
-                                // starts counting from zero...its max value is 1000 000
-                                printf("(%ld)", ((1000000 - first_us) + data.timestamp_us));
-                            } else{
-                                printf("(%ld)", (data.timestamp_us - first_us));
-                            }
-                            // Print its RSSI
-                            rssi =(3 * (data.rssi - 1) + RSSI_BASE_VAL);
-                            printf("%d ", rssi);
+                        // Print deviation from first timestamp
+                        if(data.timestamp_s > first_s){
+                            // If seconds changed during measurments, us counter
+                            // starts counting from zero...its max value is 1000 000
+                            printf("(%ld)", ((1000000 - first_us) + data.timestamp_us));
+                        } else{
+                            printf("(%ld)", (data.timestamp_us - first_us));
+                        }
+                        // Print its RSSI
+                        rssi =(3 * (data.rssi - 1) + RSSI_BASE_VAL);
+                        printf("%d ", rssi);
                     }
                 }
             }
         }
         printf("\n");
         suc_update = 1;
+    }
+}
+
+void
+STATS_clear_background_noise(void){
+    // Go through all channels
+    for(uint8_t i=0; i<16; i++){
+        // If channel was initialized
+        if(STATS_is_channel_init(i)){
+            STATS_free_channel_buffer(buffer, i);
+        }
     }
 }
 

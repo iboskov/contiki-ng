@@ -4,19 +4,102 @@ import sys
 import argparse
 import serial
 from datetime import datetime
+from timeit import default_timer as timer
 
 LINES_TO_READ = 7000
 
 DEFAULT_FILE_NAME = "rf2xx_stats.txt"
 
-baseport = "/dev/ttyUSB"
+BASEPORT = "/dev/ttyUSB"
 BAUD = 112500
 PARITY = serial.PARITY_NONE
 STOPBIT = serial.STOPBITS_ONE
 BYTESIZE = serial.EIGHTBITS
 
 # ----------------------------------------------------------------------
-# Argument parser for selection output text file - where to store data
+# Monitor class
+# ----------------------------------------------------------------------
+class serial_monitor():
+
+    def __init__(self):
+        self.gotResponse = False
+
+    
+    def connect_to(self, p):
+        try:
+            self.port = "/dev/" + p
+            self.ser = serial.Serial(self.port, BAUD, BYTESIZE, PARITY, STOPBIT, timeout=1)
+            print("Serial monitor opened on port: " + self.port)
+        except:
+            print("Serial port not connected or in use!..Exiting now")
+            sys.exit(1)
+
+
+    def auto_connect(self):
+        for i in range(0, 12):
+            try:
+                self.port = BASEPORT + str(i)
+                self.ser = serial.Serial(self.port, BAUD, BYTESIZE, PARITY, STOPBIT, timeout=1)
+                print("Serial monitor opened on port: " + self.port)
+                break
+            except:
+                print("No serial port connected or all in use!..Exiting now")
+                sys.exit(1)
+
+    
+    def read_line(self):
+        value = self.ser.read_until(b'\n', None)
+        return value
+
+
+    def send_cmd(self, cmd):
+        try:
+            self.ser.write((cmd + "\n").encode("ASCII"))
+        except:
+            print("Error writing to device!")
+
+
+    def wait_response(self, max_time):
+        startTime = timer()
+        while((timer() - startTime) < max_time):
+            try:
+                value = self.ser.readline()
+                if not value:
+                    break     
+                if(chr(value[0]) == '>'):
+                    self.gotResponse = True
+                    break
+            except KeyboardInterrupt:
+                print("\n Keyboard interrupt!..Exiting now")
+                sys.exit(1)
+
+
+    def prepare_file(self, filename):
+        self.filename = filename
+        self.file = open(filename, mode="w", encoding="UTF-8")
+        self.file.write(str(datetime.now())+"\n")
+        self.file.write("----------------------------------------------------------------------------------------------- \n")
+        self.file.write("Serial input from port:" + monitor.port + "\n")
+        if(args.root):
+            self.file.write("Device is root of the DAG network! \n")
+        self.file.write("----------------------------------------------------------------------------------------------- \n")
+        self.file.close()
+
+    
+    def store_to_file(self, data):
+        self.file.write("[" + str(datetime.now().time())+"]: ")
+        data = data.decode("UTF-8")
+        self.file.write(str(data))
+        
+
+    def close(self):
+        self.ser.close()
+        self.file.close()
+
+monitor = serial_monitor()
+
+# ----------------------------------------------------------------------
+# Argument parser for selection output text file, port, root option,...
 # ----------------------------------------------------------------------
 parser = argparse.ArgumentParser(
     description="Store serial input into given file.",
@@ -33,10 +116,6 @@ parser.add_argument("-p",
                     given, program will find it automaticly""",
                     type=str, 
                     required=False)
-parser.add_argument("-s", 
-                    "--skip",   
-                    help="skip waiting for the start sequence", 
-                    action="store_true")
 parser.add_argument("-r",
                     "--root",
                     help="set device as root of the network",
@@ -49,120 +128,98 @@ args = parser.parse_args()
 # ----------------------------------------------------------------------
 if(not args.port):
     # Find port automaticly - search for ttyUSB
-    for i in range(0, 12):
-        try:
-            port = baseport + str(i)
-            ser = serial.Serial(port, BAUD, BYTESIZE, PARITY, STOPBIT)
-            print("Serial monitor opened on port: " + port)
-            break
-        except:
-            print("No serial port connected or all in use!..Exiting now")
-            sys.exit(1)
+    monitor.auto_connect()
 else:
     # Connect to given port
-    try:
-        port = "/dev/" + args.port
-        ser = serial.Serial(port, BAUD, BYTESIZE, PARITY, STOPBIT)
-        print("Serial monitor opened on port: " + port)
-    except:
-        print("Serial port not connected or in use!..Exiting now")
-        sys.exit(1)
-
+    monitor.connect_to(args.port)
 
 # ----------------------------------------------------------------------
 # Prepare output file
 # ----------------------------------------------------------------------
 if(not args.output):
-    filename = DEFAULT_FILE_NAME
-    print("Storing into default file: " + filename)
+    name = DEFAULT_FILE_NAME
+    print("Storing into default file: " + name)
 else:
-    filename = args.output
-    print("Storing into: " + filename)
+    name = args.output
+    print("Storing into: " + name)
 
 # (optional) Write first lines into it
-file = open(filename, mode="w", encoding="UTF-8")
-file.write(str(datetime.now())+"\n")
-file.write("----------------------------------------------------------------------------------------------- \n")
-file.write("Serial input from port:" + port + "\n")
-if(args.root):
-    file.write("Device is root of the DAG network! \n")
-file.write("----------------------------------------------------------------------------------------------- \n")
-file.close()
-
-# ----------------------------------------------------------------------
-# Find start sequence '*'
-# ----------------------------------------------------------------------
-if(not args.skip):
-    print("Waiting for start sequence (reset the node)...")
-    while(True):
-        try:
-            value = ser.readline()
-            if(chr(value[0]) == '*'):
-                break
-        except KeyboardInterrupt:
-            print("\n Keyboard interrupt!..Exiting now")
-            sys.exit(1)
-        except serial.SerialException:
-            print("\n Serial Error...read line with no data")
+monitor.prepare_file(name)
 
 # ----------------------------------------------------------------------
 # Set device as root of the network via serial CLI
 # ----------------------------------------------------------------------
 if(args.root):
     print("Set device as DAG root")
-    try:
-        ser.write("rpl-set-root 1 \n".encode("ASCII"))
-    except:
-        print("Error writing to device!")
+    monitor.send_cmd("*Root")
     
-    # After device is set as root it responds with two lines, which we
-    # do not want into log file...the loop below waits for them and 
-    # then proceeds to logging
-    while(True):
-        try:
-            value = ser.readline()
-            if(chr(value[0]) == '#'):
-                break
-        except KeyboardInterrupt:
-            print("\n Keyboard interrupt!..Exiting now")
-            sys.exit(1)
+# ----------------------------------------------------------------------
+# Start the app
+# ----------------------------------------------------------------------
+print("Send start command")
+monitor.send_cmd(">Start")
 
+# Wait for response ('>' character) from Vesna for 3 seconds
+print("Waiting for response...")
+monitor.wait_response(3)
 
-print("Start logging serial input") 
+# If device is not responding, try again
+if(not monitor.gotResponse):
+    print("No response -> send start cmd again...")
+    monitor.send_cmd("=End")
+    monitor.send_cmd(">Start")
+    monitor.wait_response(3)
+
+if(not monitor.gotResponse):
+    print("No response...please reset the device and try again")
+    sys.exit(1)
+
+# ----------------------------------------------------------------------
+# Read input lines while LINES_TO_READ or until stop command '='
+# ----------------------------------------------------------------------
+print("Start logging serial input:") 
 
 # Open file to append serial input to it
-file = open(filename, "a")
+monitor.file = open(monitor.filename, "a")
 
-# ----------------------------------------------------------------------
-# Read input lines while LINES_TO_READ or until stop sequence '='
-# ----------------------------------------------------------------------
-i = 1
+line = 1
 try:
-    while(i <= LINES_TO_READ):
+    while(line <= LINES_TO_READ):
         # Read one line (until \n char)
-        value = ser.read_until(b'\n', None)
+        value = monitor.read_line()
 
-        # --------------------------------------------------------------
-        # If stop sequence '=' found, exit monitor
-        # --------------------------------------------------------------
+        # If stop command '=' found, exit monitor
         if(chr(value[0]) == '='):
-            print("Found stop sequence!..stored " + str(i) + " lines.")
+            print("Found stop command!..stored " + str(line) + " lines.")
             break
 
         # Store value into file
-        file.write("[" + str(datetime.now().time())+"]: ")
-        value= value.decode("UTF-8")
-        file.write(str(value))
+        monitor.store_to_file(value)
 
         # Update status line in terminal
-        print("Line " + str(i) +"/(" + str(LINES_TO_READ) +")", end="\r")
-        i += 1
+        print("Line " + str(line) +"/(" + str(LINES_TO_READ) +")", end="\r")
+        line += 1
     
     print("")
     print("Done!..Exiting serial monitor")
 
 except KeyboardInterrupt:
-    print("\n Keyboard interrupt!..Exiting serial monitor")
+    print("\n Keyboard interrupt!..send stop command")
+    monitor.send_cmd("=End")
+
+    # Get last data ("driver statistics") before closing the monitor
+    while(True):
+        try:
+            value = monitor.read_line()
+            if(chr(value[0]) == '='):
+                break
+            else:
+                monitor.store_to_file(value)
+        except:
+            print("Error closing monitor")  
+            break
+    print("Exiting serial monitor")
+
 
 except serial.SerialException:
     print("Error opening port!..Exiting serial monitor")
@@ -170,6 +227,8 @@ except serial.SerialException:
 except IOError:
     print("\n Serial port disconnected!.. Exiting serial monitor")
 
+# ----------------------------------------------------------------------
+# Close the monitor
+# ----------------------------------------------------------------------
 finally:
-    file.close()
-    ser.close()
+    monitor.close()

@@ -60,6 +60,7 @@
 
 	void    STATS_display_packet_stats(void);
 	void    STATS_print_packet_stats(void);
+	void    STATS_clear_packet_stats(void);
 
 	/* =========================
 	*    BACKGROUND NOISE
@@ -83,6 +84,7 @@
 
 	void STATS_update_background_noise(uint16_t capacity);
 	void STATS_print_background_noise(void);
+	void STATS_clear_background_noise(void);
 
 	uint8_t STATS_is_channel_init(uint8_t channel);
 

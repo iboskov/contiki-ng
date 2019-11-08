@@ -31,20 +31,39 @@
  */
 
 #include "contiki.h"
+#include <stdio.h>
+#include "dev/serial-line.h"
 #include "arch/platform/vesna/dev/at86rf2xx/rf2xx.h"
 #include "arch/platform/vesna/dev/at86rf2xx/rf2xx_stats.h"
+#include "net/ipv6/uip.h"
 
 #define SECOND 1000
 #define STATS_BG_NOISE_BUFF_CAPACITY 503
 
-uint32_t i = 0;
-
 void STATS_print_help(void);
+void STATS_input_command(char *data);
+void STATS_set_device_as_root(void);
+void STATS_close_app(void);
 
+uint32_t counter = 0;
 /*---------------------------------------------------------------------------*/
 PROCESS(stats_process, "Stats app process");
-AUTOSTART_PROCESSES(&stats_process);
+PROCESS(serial_input_process, "Serial input command");
+AUTOSTART_PROCESSES(&serial_input_process);
 /*---------------------------------------------------------------------------*/
+
+PROCESS_THREAD(serial_input_process, ev, data)
+{
+    PROCESS_BEGIN();
+
+    while(1){
+      PROCESS_WAIT_EVENT_UNTIL(
+        (ev == serial_line_event_message) && (data != NULL));
+      STATS_input_command(data);
+    }
+
+    PROCESS_END();
+}
 
 PROCESS_THREAD(stats_process, ev, data)
 {
@@ -52,47 +71,47 @@ PROCESS_THREAD(stats_process, ev, data)
 
   PROCESS_BEGIN();
 
+  printf(">Starting app! \n");
+  counter = 0;  
+
+  // Empty buffers if they have some values from before
+  //RF2XX_STATS_RESET();
+  //STATS_clear_packet_stats();
+
+  //TODO: when you restart the app, packet statistic gets funky data...fix this
+  //[14:34:35.844074]: T64 197 B 0x4CF8
+  //[14:34:35.844239]: 635:873069
+  //[14:34:35.844495]: C26 L35 S205 | P255
+
+  //[14:37:25.434965]: T6656 7 65535:65
+  //[14:37:25.435139]: C3 L0 S0 | P0
+
+  // Optional: print help into log file
+  STATS_print_help();
+
   etimer_set(&timer, 1);  //ms = 1, sec = 1000
 
-  printf("***** Start monitoring serial port *****\n");
-
   while(1) {
-    i++;
-
-  #if RF2XX_CONF_STATS
-
-    // Wait for 1 second before start of the app
-    if(i <= (SECOND)){
-      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
-      etimer_reset(&timer);
-      continue;
-    }
-
-    // Optional: print help into log file
-    if(i == (SECOND + 1)){
-      STATS_print_help();
-    }
+    counter++;
 
     // Every 1ms measure rssi and store it into buffer
     STATS_update_background_noise(STATS_BG_NOISE_BUFF_CAPACITY);
   
     // Every half second print measured values and clear the buffer
-    if(i%(SECOND/2) == 0) {
+    if(counter%(SECOND/2) == 0) {
       STATS_print_background_noise();
     }
 
     // Every 10 seconds print packet statistics and clear the buffer
-    if((i%(SECOND * 10)) == 0){
+    if((counter%(SECOND * 10)) == 0){
       STATS_print_packet_stats();
     }
 
-    // After 10 min send stop sequence ('=') and print driver statistics
-    if(i == (SECOND * 600)){
-      STATS_print_driver_stats();
-      printf("===== Stop monitoring serial port =====\n");
+    // After 10 min send stop command ('=') and print driver statistics
+    if(counter == (SECOND * 600)){
+      STATS_close_app();
+      PROCESS_EXIT();
     }
-    
-  #endif
 
     /* Wait for the periodic timer to expire and then restart the timer. */
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
@@ -104,16 +123,66 @@ PROCESS_THREAD(stats_process, ev, data)
 /*---------------------------------------------------------------------------*/
 
 void
+STATS_input_command(char *data){
+    char cmd = data[0];
+    switch(cmd){
+      case '>':
+        process_start(&stats_process, NULL);
+        break;
+      
+      case '*':
+        STATS_set_device_as_root();
+        break;
+      
+      case '=':
+        process_exit(&stats_process);
+        STATS_close_app();
+    }
+}
+
+void
+STATS_set_device_as_root(void){
+  static uip_ipaddr_t prefix;
+  const uip_ipaddr_t *default_prefix = uip_ds6_default_prefix();
+
+  uip_ip6addr_copy(&prefix, default_prefix);
+
+  if(!NETSTACK_ROUTING.node_is_root()) {
+      NETSTACK_ROUTING.root_set_prefix(&prefix, NULL);
+      NETSTACK_ROUTING.root_start();
+    } else {
+      printf("Node is already a DAG root\n");
+    }
+}
+
+void
+STATS_close_app(void){
+  STATS_print_driver_stats();
+  // Send '=' cmd to stop the monitor
+  printf("=End monitoring serial port\n");
+
+  // Empty buffers
+  RF2XX_STATS_RESET();
+  STATS_clear_background_noise();
+  STATS_clear_packet_stats();
+
+  // Reset the network
+  if(NETSTACK_ROUTING.node_is_root()){
+    NETSTACK_ROUTING.leave_network();
+  }
+  // TODO: tell other devices to leave the network
+}
+
+void
 STATS_print_help(void){
   uint8_t addr[8];
 
   rf2xx_driver.get_object(RADIO_PARAM_64BIT_ADDR, &addr, 8);
-
-  printf("\n"); 
   printf("Device ID: ");
   for(int j=0; j<8; j++){
     printf("%X",addr[j]);
   }
+
   printf("\n"); 
   printf("----------------------------------------------------------------------------\n");
   printf("\n");
