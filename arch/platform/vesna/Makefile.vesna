@@ -169,9 +169,15 @@ OBJDUMP_FLAGS += --disassemble --source --disassembler-options=force-thumb
 
 %.debug %.debug.olimex: %.$(TARGET)
 	$(Q)openocd \
-		-s $(ARCH_PATH)/platform/$(TARGET)/OpenOCD/ \
-		-f snc_olimex_gdb.cfg
-
+		-f interface/ftdi/olimex-arm-usb-ocd.cfg \
+		-f target/stm32f1x.cfg \
+		-c "reset_config none" \
+		-c "telnet_port 4444" \
+		-c "gdb_port 3333" \
+		-c "tcl_port 6666" \
+		-c "init" \
+		-c "reset init" \
+		-c "verify_ircapture disable" \
 
 %.gdb: %.$(TARGET)
 	$(Q)gdb-multiarch \

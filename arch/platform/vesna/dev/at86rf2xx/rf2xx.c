@@ -28,6 +28,7 @@ PROCESS(rf2xx_process, "AT86RF2xx driver");
 volatile uint32_t rf2xxStats[RF2XX_STATS_COUNT] = { 0 };
 #endif
 
+ uint8_t appIsRunning = 0;
 
 // SRC: https://barrgroup.com/Embedded-Systems/How-To/Define-Assert-Macro
 #define ASSERT(expr) ({ if (!(expr)) LOG_ERR("Err: " #expr "\n"); })
@@ -214,7 +215,7 @@ again:
 
     #if RF2XX_STATS
         // Update TX packet statistics
-        STATS_put_tx_packet(&txFrame);
+        if(appIsRunning) STATS_put_tx_packet(&txFrame);
     #endif
 
     txFrame.trac = (RF2XX_ARET) ? bitRead(SR_TRAC_STATUS) : TRAC_SUCCESS;
@@ -452,7 +453,7 @@ rf2xx_isr(void)
 
             #if RF2XX_STATS
                 // Update RX packet statistics
-                STATS_put_rx_packet(&rxFrame);
+                if(appIsRunning) STATS_put_rx_packet(&rxFrame);
             #endif
             process_poll(&rf2xx_process);
  

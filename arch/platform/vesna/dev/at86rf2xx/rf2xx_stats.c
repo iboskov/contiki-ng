@@ -420,6 +420,9 @@ STATS_print_packet_stats(void){
                 case 2:
                 printf("A 0x%X\n", tp.dest_addr);
                 break;
+                default:
+                printf("Un\n");
+                break;
             }
             printf("%ld:%ld\n", tp.timestamp_s, tp.timestamp_us);
             printf("C%d L%d S%d | P%d\n", tp.channel, tp.len, tp.sqn, tp.power);
@@ -440,6 +443,9 @@ STATS_print_packet_stats(void){
                 case 2:
                 printf("A\n");
                 break;
+                default:
+                printf("Un\n");
+                break;
             }
             printf("%ld:%ld\n", rp.timestamp_s, rp.timestamp_us);
             printf("C%d L%d S%d | R%d Q%d\n",rp.channel, rp.len, rp.sqn, rp.rssi, rp.lqi);
@@ -449,14 +455,21 @@ STATS_print_packet_stats(void){
 
 void
 STATS_clear_packet_stats(void){
-    // Reset buffer variables
-    rb.head = rb.buffer_start;
-    rb.tail = rb.buffer_start;
-    rb.count = 0;
+    // Reset buffer variables - just read the values and don't display them
 
-    tb.head = tb.buffer_start;
-    tb.tail = rb.buffer_start;
-    tb.count = 0;
+    rxPacket_t rp;
+    txPacket_t tp;
+
+    if(tb.count != 0){
+        while(tb.count != 0){
+            STATS_get_tx_packet(&tp);
+        }
+    }
+    if(rb.count != 0){  
+        while(rb.count != 0){
+            STATS_get_rx_packet(&rp);
+        }
+    }
 }
 
 
@@ -486,7 +499,7 @@ STATS_init_channel_buffer(buffer_t *b, uint8_t ch, uint16_t capacity){
     b[ch].buffer_start = malloc(capacity * b[ch].size );
 
     if(b[ch].buffer_start == NULL){
-        LOG_ERR("RSSI Memory buffer for channel %d could not be allocated! \n", ch+11);
+        printf("RSSI Memory buffer for channel %d could not be allocated! \n", ch+11);
         return 0;
     }
     b[ch].buffer_end = (char *)b[ch].buffer_start + capacity * b[ch].size;

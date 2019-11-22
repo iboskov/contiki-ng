@@ -30,7 +30,11 @@
 #define RF2XX_STATS     (0)
 #else
 #define RF2XX_STATS     (RF2XX_CONF_STATS)
-#define STATS_PACKET_BUFF_CAPACITY (STATS_CONF_PACKET_BUFF_CAPACITY)
+    #ifndef STATS_CONF_PACKET_BUFF_CAPACITY
+    #define STATS_PACKET_BUFF_CAPACITY (20)
+    #else
+    #define STATS_PACKET_BUFF_CAPACITY (STATS_CONF_PACKET_BUFF_CAPACITY)
+    #endif
 #endif
 
 // Enable radio's auto acknowledge capabilities (extended mode)

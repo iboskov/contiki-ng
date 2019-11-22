@@ -40,12 +40,22 @@
 #define SECOND 1000
 #define STATS_BG_NOISE_BUFF_CAPACITY 503
 
+#if (STATS_CONF_BGN_EVERY_x_MS == 10)
+  #define BGN_EVERY_10_MS   1
+#elif (STATS_CONF_BGN_EVERY_x_MS == 2)
+  #define BGN_EVERY_2_MS   1
+#else
+  #define BGN_EVERY_1_MS   1
+#endif
+
+
 void STATS_print_help(void);
 void STATS_input_command(char *data);
 void STATS_set_device_as_root(void);
 void STATS_close_app(void);
 
 uint32_t counter = 0;
+extern uint8_t appIsRunning;
 /*---------------------------------------------------------------------------*/
 PROCESS(stats_process, "Stats app process");
 PROCESS(serial_input_process, "Serial input command");
@@ -73,19 +83,12 @@ PROCESS_THREAD(stats_process, ev, data)
 
   printf(">Starting app! \n");
   counter = 0;  
+  appIsRunning = 1;
 
   // Empty buffers if they have some values from before
-  //RF2XX_STATS_RESET();
-  //STATS_clear_packet_stats();
-
-  //TODO: when you restart the app, packet statistic gets funky data...fix this
-  //[14:34:35.844074]: T64 197 B 0x4CF8
-  //[14:34:35.844239]: 635:873069
-  //[14:34:35.844495]: C26 L35 S205 | P255
-
-  //[14:37:25.434965]: T6656 7 65535:65
-  //[14:37:25.435139]: C3 L0 S0 | P0
-
+  RF2XX_STATS_RESET();
+  STATS_clear_packet_stats();
+  
   // Optional: print help into log file
   STATS_print_help();
 
@@ -94,13 +97,27 @@ PROCESS_THREAD(stats_process, ev, data)
   while(1) {
     counter++;
 
-    // Every 1ms measure rssi and store it into buffer
-    STATS_update_background_noise(STATS_BG_NOISE_BUFF_CAPACITY);
-  
-    // Every half second print measured values and clear the buffer
-    if(counter%(SECOND/2) == 0) {
+  #if BGN_EVERY_10_MS
+    if(counter%10 == 0){
+      STATS_update_background_noise(STATS_BG_NOISE_BUFF_CAPACITY);
+    }
+    if(counter%(5*SECOND) == 0) { // Every 5 second
       STATS_print_background_noise();
     }
+  #elif BGN_EVERY_2_MS
+    if(counter%2 == 0){
+      STATS_update_background_noise(STATS_BG_NOISE_BUFF_CAPACITY);
+    }
+    if((counter%SECOND) == 0) {  // Every second
+      STATS_print_background_noise();
+    }
+  #elif BGN_EVERY_1_MS
+    STATS_update_background_noise(STATS_BG_NOISE_BUFF_CAPACITY);
+     
+    if(counter%(SECOND/2) == 0) { // Every half second
+      STATS_print_background_noise();
+    }
+  #endif
 
     // Every 10 seconds print packet statistics and clear the buffer
     if((counter%(SECOND * 10)) == 0){
@@ -113,7 +130,7 @@ PROCESS_THREAD(stats_process, ev, data)
       PROCESS_EXIT();
     }
 
-    /* Wait for the periodic timer to expire and then restart the timer. */
+    // Wait for the periodic timer to expire and then restart the timer.
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
     etimer_reset(&timer);
   }
@@ -137,6 +154,16 @@ STATS_input_command(char *data){
       case '=':
         process_exit(&stats_process);
         STATS_close_app();
+        break;
+
+      case '!':
+        //process_start(&ping_process, NULL);
+        //STATS_ping_neighbour..
+        break;
+
+      //case 'reboot':
+        //watchdog_reboot();
+        //break;
     }
 }
 
@@ -157,6 +184,8 @@ STATS_set_device_as_root(void){
 
 void
 STATS_close_app(void){
+  appIsRunning = 0;
+
   STATS_print_driver_stats();
   // Send '=' cmd to stop the monitor
   printf("=End monitoring serial port\n");
@@ -170,7 +199,6 @@ STATS_close_app(void){
   if(NETSTACK_ROUTING.node_is_root()){
     NETSTACK_ROUTING.leave_network();
   }
-  // TODO: tell other devices to leave the network
 }
 
 void
