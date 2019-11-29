@@ -6,7 +6,7 @@ import serial
 from datetime import datetime
 from timeit import default_timer as timer
 
-LINES_TO_READ = 7000
+LINES_TO_READ = 10000
 
 DEFAULT_FILE_NAME = "rf2xx_stats.txt"
 
@@ -28,7 +28,7 @@ class serial_monitor():
     def connect_to(self, p):
         try:
             self.port = "/dev/" + p
-            self.ser = serial.Serial(self.port, BAUD, BYTESIZE, PARITY, STOPBIT, timeout=1)
+            self.ser = serial.Serial(self.port, BAUD, BYTESIZE, PARITY, STOPBIT, timeout=10)
             print("Serial monitor opened on port: " + self.port)
         except:
             print("Serial port not connected or in use!..Exiting now")
@@ -39,7 +39,7 @@ class serial_monitor():
         for i in range(0, 12):
             try:
                 self.port = BASEPORT + str(i)
-                self.ser = serial.Serial(self.port, BAUD, BYTESIZE, PARITY, STOPBIT, timeout=1)
+                self.ser = serial.Serial(self.port, BAUD, BYTESIZE, PARITY, STOPBIT, timeout=10)
                 print("Serial monitor opened on port: " + self.port)
                 break
             except:
@@ -188,17 +188,19 @@ try:
         # Read one line (until \n char)
         value = monitor.read_line()
 
-        # If stop command '=' found, exit monitor
-        if(chr(value[0]) == '='):
-            print("Found stop command!..stored " + str(line) + " lines.")
-            break
+        # Because of timeout setting, serial may return empty list
+        if value:           
+            # If stop command '=' found, exit monitor
+            if(chr(value[0]) == '='):
+                print("Found stop command!..stored " + str(line) + " lines.")
+                break
 
-        # Store value into file
-        monitor.store_to_file(value)
+            # Store value into file
+            monitor.store_to_file(value)
 
-        # Update status line in terminal
-        print("Line " + str(line) +"/(" + str(LINES_TO_READ) +")", end="\r")
-        line += 1
+            # Update status line in terminal
+            print("Line " + str(line) +"/(" + str(LINES_TO_READ) +")", end="\r")
+            line += 1
     
     print("")
     print("Done!..Exiting serial monitor")

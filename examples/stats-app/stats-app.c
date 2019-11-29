@@ -38,107 +38,178 @@
 #include "net/ipv6/uip.h"
 
 #define SECOND 1000
-#define STATS_BG_NOISE_BUFF_CAPACITY 503
 
-#if (STATS_CONF_BGN_EVERY_x_MS == 10)
-  #define BGN_EVERY_10_MS   1
-#elif (STATS_CONF_BGN_EVERY_x_MS == 2)
-  #define BGN_EVERY_2_MS   1
-#else
-  #define BGN_EVERY_1_MS   1
-#endif
-
+uint32_t counter = 0;
+extern uint8_t appIsRunning;
 
 void STATS_print_help(void);
 void STATS_input_command(char *data);
 void STATS_set_device_as_root(void);
 void STATS_close_app(void);
 
-uint32_t counter = 0;
-extern uint8_t appIsRunning;
+//TODO: popravi packet count - ko resetiraš ga postavi na 0
+
 /*---------------------------------------------------------------------------*/
 PROCESS(stats_process, "Stats app process");
 PROCESS(serial_input_process, "Serial input command");
+PROCESS(ping_process, "Pinging process");
 AUTOSTART_PROCESSES(&serial_input_process);
-/*---------------------------------------------------------------------------*/
 
+/*---------------------------------------------------------------------------*/
 PROCESS_THREAD(serial_input_process, ev, data)
 {
     PROCESS_BEGIN();
-
     while(1){
       PROCESS_WAIT_EVENT_UNTIL(
         (ev == serial_line_event_message) && (data != NULL));
       STATS_input_command(data);
     }
-
     PROCESS_END();
 }
 
+/*---------------------------------------------------------------------------*/
 PROCESS_THREAD(stats_process, ev, data)
 {
-  static struct etimer timer;
+	static struct etimer timer;
 
-  PROCESS_BEGIN();
+	PROCESS_BEGIN();
 
-  printf(">Starting app! \n");
-  counter = 0;  
-  appIsRunning = 1;
+	printf(">Starting app! \n");
+	counter = 0;  
+	appIsRunning = 1;
 
-  // Empty buffers if they have some values from before
-  RF2XX_STATS_RESET();
-  STATS_clear_packet_stats();
-  
-  // Optional: print help into log file
-  STATS_print_help();
+	// Empty buffers if they have some values from before
+	RF2XX_STATS_RESET();
+	STATS_clear_packet_stats();
 
-  etimer_set(&timer, 1);  //ms = 1, sec = 1000
+	// Optional: print help into log file
+	STATS_print_help();
 
-  while(1) {
-    counter++;
+	etimer_set(&timer, 1);  //ms = 1, sec = 1000
 
-  #if BGN_EVERY_10_MS
-    if(counter%10 == 0){
-      STATS_update_background_noise(STATS_BG_NOISE_BUFF_CAPACITY);
-    }
-    if(counter%(5*SECOND) == 0) { // Every 5 second
-      STATS_print_background_noise();
-    }
-  #elif BGN_EVERY_2_MS
-    if(counter%2 == 0){
-      STATS_update_background_noise(STATS_BG_NOISE_BUFF_CAPACITY);
-    }
-    if((counter%SECOND) == 0) {  // Every second
-      STATS_print_background_noise();
-    }
-  #elif BGN_EVERY_1_MS
-    STATS_update_background_noise(STATS_BG_NOISE_BUFF_CAPACITY);
-     
-    if(counter%(SECOND/2) == 0) { // Every half second
-      STATS_print_background_noise();
-    }
-  #endif
+	while(1) {
+		counter++;
 
-    // Every 10 seconds print packet statistics and clear the buffer
-    if((counter%(SECOND * 10)) == 0){
-      STATS_print_packet_stats();
-    }
+	// Measure and display background noise
+	#if STATS_BGN_MEASURMENT_EVERY_5MS
+		if((counter%5) == 0) {
+			STATS_update_background_noise(STATS_BGN_BUFFER_CAPACITY);
+		}
 
-    // After 10 min send stop command ('=') and print driver statistics
-    if(counter == (SECOND * 600)){
-      STATS_close_app();
-      PROCESS_EXIT();
-    }
+		#if STATS_BGN_3_CHANNELS
+			if((counter%(5 * SECOND)) == 0) {
+				STATS_print_background_noise();
+			}
+		#elif STATS_BGN_6_CHANNELS	
+			if((counter%(2500)) == 0) {
+				STATS_print_background_noise();
+			}
+		#elif STATS_BGN_16_CHANNELS
+			if((counter%(SECOND)) == 0) {
+				STATS_print_background_noise();
+			}
+		#else
+			if((counter%(15 * SECOND)) == 0) {
+				STATS_print_background_noise();
+			}
+		#endif
+	#else
+		STATS_update_background_noise(STATS_BGN_BUFFER_CAPACITY);
 
-    // Wait for the periodic timer to expire and then restart the timer.
-    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
-    etimer_reset(&timer);
-  }
+		#if STATS_BGN_3_CHANNELS
+			if((counter%(SECOND)) == 0) {
+				STATS_print_background_noise();
+			}
+		#elif STATS_BGN_6_CHANNELS	
+			if((counter%(SECOND/2)) == 0) {
+				STATS_print_background_noise();
+			}
+		#elif STATS_BGN_16_CHANNELS
+			if((counter%(SECOND/5)) == 0) {
+				STATS_print_background_noise();
+			}
+		#else
+			if((counter%(3 * SECOND)) == 0) {
+				STATS_print_background_noise();
+			}
+		#endif
+	#endif
 
-  PROCESS_END();
+		// Every 10 seconds print packet statistics and clear the buffer
+		if((counter%(SECOND * 10)) == 0){
+			STATS_print_packet_stats();
+		}
+
+		// After 10 min send stop command ('=') and print driver statistics
+		if(counter == (SECOND * 600)){
+			STATS_close_app();
+			PROCESS_EXIT();
+		}
+
+		// Wait for the periodic timer to expire and then restart the timer.
+		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+		etimer_reset(&timer);
+	}
+
+	PROCESS_END();
 }
-/*---------------------------------------------------------------------------*/
 
+/*---------------------------------------------------------------------------*/
+// TODODODO
+PROCESS_THREAD(ping_process, ev, data)
+{
+	static uip_ipaddr_t remote_addr;
+	static struct etimer timeout_timer;
+	char *next_args;
+
+	PROCESS_BEGIN();
+
+	// Dobi argumente - koga pingat
+
+	if(data == NULL) {
+		printf("Destination IPv6 address is not specified\n");
+		PROCESS_EXIT();
+	} else if(uiplib_ipaddrconv(data, &remote_addr) == 0) {
+		printf("Invalid IPv6 address: %s\n", data);
+		PROCESS_EXIT();
+	}
+
+	printf("Pinging ");
+	printf( &remote_addr);
+	printf("\n");
+
+	/* Send ping request */
+	etimer_set(&timeout_timer, (5 * CLOCK_SECOND));
+	uip_icmp6_send(&remote_addr, ICMP6_ECHO_REQUEST, 0, 4);
+	PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timeout_timer));
+
+/*
+	if(curr_ping_output_func != NULL) {
+		SHELL_OUTPUT(output, "Timeout\n");
+		curr_ping_output_func = NULL;
+	} else {
+		SHELL_OUTPUT(output, "Received ping reply from ");
+		shell_output_6addr(output, &remote_addr);
+		SHELL_OUTPUT(output, ", len %u, ttl %u, delay %lu ms\n",
+		curr_ping_datalen, curr_ping_ttl, (1000*(clock_time() - timeout_timer.timer.start))/CLOCK_SECOND);
+	}
+*/
+	PROCESS_END();
+}
+
+/*---------------------------------------------------------------------------*/
+PROCESS_THREAD(serial_input_process, ev, data)
+{
+    PROCESS_BEGIN();
+    while(1){
+      PROCESS_WAIT_EVENT_UNTIL(
+        (ev == serial_line_event_message) && (data != NULL));
+      STATS_input_command(data);
+    }
+    PROCESS_END();
+}
+
+/*---------------------------------------------------------------------------*/
 void
 STATS_input_command(char *data){
     char cmd = data[0];
@@ -156,6 +227,10 @@ STATS_input_command(char *data){
         STATS_close_app();
         break;
 
+	case '?':
+		printf("solata: %d \n", sizeof(txPacket_t));
+		break;
+
       case '!':
         //process_start(&ping_process, NULL);
         //STATS_ping_neighbour..
@@ -167,97 +242,97 @@ STATS_input_command(char *data){
     }
 }
 
+/*---------------------------------------------------------------------------*/
 void
 STATS_set_device_as_root(void){
-  static uip_ipaddr_t prefix;
-  const uip_ipaddr_t *default_prefix = uip_ds6_default_prefix();
+	static uip_ipaddr_t prefix;
+	const uip_ipaddr_t *default_prefix = uip_ds6_default_prefix();
+	uip_ip6addr_copy(&prefix, default_prefix);
 
-  uip_ip6addr_copy(&prefix, default_prefix);
-
-  if(!NETSTACK_ROUTING.node_is_root()) {
-      NETSTACK_ROUTING.root_set_prefix(&prefix, NULL);
-      NETSTACK_ROUTING.root_start();
-    } else {
-      printf("Node is already a DAG root\n");
+  	if(!NETSTACK_ROUTING.node_is_root()) {
+     	NETSTACK_ROUTING.root_set_prefix(&prefix, NULL);
+     	NETSTACK_ROUTING.root_start();
+	} else {
+      	printf("Node is already a DAG root\n");
     }
 }
 
+/*---------------------------------------------------------------------------*/
 void
 STATS_close_app(void){
-  appIsRunning = 0;
+	appIsRunning = 0;
 
-  STATS_print_driver_stats();
-  // Send '=' cmd to stop the monitor
-  printf("=End monitoring serial port\n");
+	STATS_print_driver_stats();
+	// Send '=' cmd to stop the monitor
+	printf("=End monitoring serial port\n");
 
-  // Empty buffers
-  RF2XX_STATS_RESET();
-  STATS_clear_background_noise();
-  STATS_clear_packet_stats();
+	// Empty buffers
+	RF2XX_STATS_RESET();
+	STATS_clear_background_noise();
+	STATS_clear_packet_stats();
 
-  // Reset the network
-  if(NETSTACK_ROUTING.node_is_root()){
-    NETSTACK_ROUTING.leave_network();
-  }
+	// Reset the network
+	if(NETSTACK_ROUTING.node_is_root()){
+		NETSTACK_ROUTING.leave_network();
+	}
 }
 
+/*---------------------------------------------------------------------------*/
 void
 STATS_print_help(void){
-  uint8_t addr[8];
+	uint8_t addr[8];
 
-  rf2xx_driver.get_object(RADIO_PARAM_64BIT_ADDR, &addr, 8);
-  printf("Device ID: ");
-  for(int j=0; j<8; j++){
-    printf("%X",addr[j]);
-  }
+	rf2xx_driver.get_object(RADIO_PARAM_64BIT_ADDR, &addr, 8);
+	printf("Device ID: ");
+	for(int j=0; j<8; j++){
+		printf("%X",addr[j]);
+	}
 
-  printf("\n"); 
-  printf("----------------------------------------------------------------------------\n");
-  printf("\n");
-  printf("       DESCRIPTION\n");
-  printf("----------------------------------------------------------------------------\n");
-  printf("CH[cc][xxx]([ss:us]): (tt)[v] (tt)[v] (tt)[v] ...\n");
+	printf("\n"); 
+	printf("----------------------------------------------------------------------------\n");
+	printf("\n");
+	printf("       DESCRIPTION\n");
+	printf("----------------------------------------------------------------------------\n");
+	printf("CH[cc][xxx]([ss:us]): (tt)[v] (tt)[v] (tt)[v] ...\n");
 
-  printf("cc   - Channel number, where RSSI is measured \n");
-  printf("xxx  - Count of measured values \n");
-  printf("ss   - Timestamp in seconds \n");
-  printf("us   - Timestamp in micro seconds \n");
-  printf("tt   - Deviation from first measurment in micro seconds\n");
-  printf("v    - Measured RSSI values at theirs timestamp \n");
-  printf("----------------------------------------------------------------------------\n");
-  printf("T[n] [u] [t] [0xaaaa] \n");
-  printf("[s]:[us]\n");
-  printf("C[cc] L[ll] S[ss] | P[pp] \n");
+	printf("cc   - Channel number, where RSSI is measured \n");
+	printf("xxx  - Count of measured values \n");
+	printf("ss   - Timestamp in seconds \n");
+	printf("us   - Timestamp in micro seconds \n");
+	printf("tt   - Deviation from first measurment in micro seconds\n");
+	printf("v    - Measured RSSI values at theirs timestamp \n");
+	printf("----------------------------------------------------------------------------\n");
+	printf("T[n] [u] [t] [0xaaaa] \n");
+	printf("[s]:[us]\n");
+	printf("C[cc] L[ll] S[ss] | P[pp] \n");
 
-  printf("n    - Transmited packt count \n");
-  printf("u    - (1/0 = unicast/broadcast) \n");
-  printf("t    - Type of packet (D/B/A = data/beacon/ACK) \n");
-  printf("aaaa - Destination address \n");
-  printf("s    - Timestamp in seconds \n");
-  printf("us   - Timestamp in micro seconds \n");
-  printf("cc   - Channel number \n");
-  printf("ll   - Packet length in bytes \n");
-  printf("ss   - Sequence number \n");
-  printf("pp   - Transmision power (0 = 3dBm)\n");
-  printf("----------------------------------------------------------------------------\n");
-  printf("R[n] [t] [0xaaaa] \n");
-  printf("[s]:[us]\n");
-  printf("C[cc] L[ll] S[ss] | R[rr] Q[qq] \n");
+	printf("n    - Transmited packt count \n");
+	printf("u    - (1/0 = unicast/broadcast) \n");
+	printf("t    - Type of packet (D/B/A = data/beacon/ACK) \n");
+	printf("aaaa - Destination address \n");
+	printf("s    - Timestamp in seconds \n");
+	printf("us   - Timestamp in micro seconds \n");
+	printf("cc   - Channel number \n");
+	printf("ll   - Packet length in bytes \n");
+	printf("ss   - Sequence number \n");
+	printf("pp   - Transmision power (0 = 3dBm)\n");
+	printf("----------------------------------------------------------------------------\n");
+	printf("R[n] [t] [0xaaaa] \n");
+	printf("[s]:[us]\n");
+	printf("C[cc] L[ll] S[ss] | R[rr] Q[qq] \n");
 
-  printf("n    - Received packt count \n");
-  printf("t    - Type of packet (D/B/A = data/beacon/ACK) \n");
-  printf("aaaa - Source address \n");
-  printf("s    - Timestamp in seconds \n");
-  printf("us   - Timestamp in micro seconds \n");
-  printf("cc   - Channel number \n");
-  printf("ll   - Packet length in bytes \n");
-  printf("ss   - Sequence number \n");
-  printf("rr   - RSSI when packet was received\n");
-  printf("qq   - LQI when packet was received \n");
-  printf("----------------------------------------------------------------------------\n");
-  printf("\n");
-  printf("On the end of file, there is a count of all received and transmited packets. \n");
-  printf("----------------------------------------------------------------------------\n");
+	printf("n    - Received packt count \n");
+	printf("t    - Type of packet (D/B/A = data/beacon/ACK) \n");
+	printf("aaaa - Source address \n");
+	printf("s    - Timestamp in seconds \n");
+	printf("us   - Timestamp in micro seconds \n");
+	printf("cc   - Channel number \n");
+	printf("ll   - Packet length in bytes \n");
+	printf("ss   - Sequence number \n");
+	printf("rr   - RSSI when packet was received\n");
+	printf("qq   - LQI when packet was received \n");
+	printf("----------------------------------------------------------------------------\n");
+	printf("\n");
+	printf("On the end of file, there is a count of all received and transmited packets. \n");
+	printf("----------------------------------------------------------------------------\n");
 }
-
-

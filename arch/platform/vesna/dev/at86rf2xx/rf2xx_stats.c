@@ -1,11 +1,9 @@
 #include <stdio.h>      // For fprint
 #include <string.h>
 #include <stdlib.h>
-
 #include "rf2xx_stats.h"
 #include "rf2xx.h"      // for LOG_LEVEL_RF2XX
-
-
+#include "heapmem.h"
 #include "sys/log.h"
 
 #define LOG_MODULE  "STATS"
@@ -21,6 +19,8 @@
  */
 static buffer_t rb;
 static buffer_t tb;
+uint8_t rx_buffer[(20 * STATS_CONF_PACKET_BUFF_CAPACITY)];  //20 is the length of rxPacket_t struct
+uint8_t tx_buffer[(20 * STATS_CONF_PACKET_BUFF_CAPACITY)];
 
 /** @brief Prepare 2 buffers for storing TX and RX packets statistics.
  *
@@ -30,44 +30,37 @@ static buffer_t tb;
  * @param  Number of max packet that can be stored. 
  */
 void
-STATS_init_packet_buffer(uint8_t capacity){
+STATS_init_packet_buffer(){
     LOG_DBG("Init buffer!\n");
 
     // Size of packet struct - bigger than sum of elements (compiler aligments)
     rb.size = sizeof(rxPacket_t);
 
-    // Alocate memory - get pointer to the begining of memory
-    rb.buffer_start = malloc(capacity * rb.size);
-    if(rb.buffer_start == NULL){
-        LOG_ERR("Buffer memory could not be allocated! \n");
-    }
+    // Reset buffer
+    memset(rx_buffer, 0, (20 * STATS_CONF_PACKET_BUFF_CAPACITY));
+
+    // Save a pointer of the begining of memory
+    rb.buffer_start = rx_buffer;
 
     // Calculate pointer to the end of memory
-    rb.buffer_end = (char *)rb.buffer_start + capacity * rb.size;
+    rb.buffer_end = (char *)rb.buffer_start + STATS_CONF_PACKET_BUFF_CAPACITY * rb.size;
 
     // Reset buffer variables
     rb.head = rb.buffer_start;
     rb.tail = rb.buffer_start;
-    rb.capacity = capacity;
+    rb.capacity = STATS_CONF_PACKET_BUFF_CAPACITY;
     rb.count = 0;
 
     // Repeat proces for TX buffer
     tb.size = sizeof(txPacket_t);
-    tb.buffer_start = malloc(capacity * tb.size);
-    if(tb.buffer_start == NULL){
-        LOG_ERR("Buffer memory could not be allocated! \n");
-    }
-    tb.buffer_end = (char *)tb.buffer_start + capacity * tb.size;
-    tb.capacity = capacity;
+    memset(tx_buffer, 0, (20 * STATS_CONF_PACKET_BUFF_CAPACITY));
+    tb.buffer_start = tx_buffer;
+
+    tb.buffer_end = (char *)tb.buffer_start + STATS_CONF_PACKET_BUFF_CAPACITY * tb.size;
+    tb.capacity = STATS_CONF_PACKET_BUFF_CAPACITY;
     tb.head = tb.buffer_start;
     tb.tail = tb.buffer_start;
     tb.count = 0;
-}
-
-void
-STATS_free_packet_buff(){
-    free(tb.buffer_start);
-    free(rb.buffer_start);
 }
 
 
@@ -495,11 +488,12 @@ static buffer_t buffer[16];
 uint8_t
 STATS_init_channel_buffer(buffer_t *b, uint8_t ch, uint16_t capacity){
 
-    b[ch].size = sizeof(bgNoise_t);
-    b[ch].buffer_start = malloc(capacity * b[ch].size );
+    b[ch].size = sizeof(bgNoise_t); //12B
+    b[ch].buffer_start = heapmem_alloc(capacity * b[ch].size );
 
     if(b[ch].buffer_start == NULL){
-        printf("RSSI Memory buffer for channel %d could not be allocated! \n", ch+11);
+        printf("RSSI Memory buffer for channel %d could not be allocated!..not enough heap memory. \n", ch+11);
+        while(1){} //TODO ce nemore inicializirat kanala, naj neha provat ponovno init
         return 0;
     }
     b[ch].buffer_end = (char *)b[ch].buffer_start + capacity * b[ch].size;
@@ -518,7 +512,7 @@ STATS_init_channel_buffer(buffer_t *b, uint8_t ch, uint16_t capacity){
 
 void
 STATS_free_channel_buffer(buffer_t *b, uint8_t ch){
-    free(b[ch].buffer_start);
+    heapmem_free(b[ch].buffer_start);
 
     // Remove channel from channel_index
     uint16_t tmp = 0x0001;
@@ -650,7 +644,8 @@ STATS_print_background_noise(void){
                         if(data.timestamp_s > first_s){
                             // If seconds changed during measurments, us counter
                             // starts counting from zero...its max value is 1000 000
-                            printf("(%ld)", ((1000000 - first_us) + data.timestamp_us));
+                            uint32_t seconds_passed = data.timestamp_s - first_s;
+                            printf("(%ld)", (((1000000 - first_us) + data.timestamp_us) + (seconds_passed * 1000000)));
                         } else{
                             printf("(%ld)", (data.timestamp_us - first_us));
                         }

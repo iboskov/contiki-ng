@@ -119,7 +119,7 @@ rf2xx_init(void)
     RF2XX_STATS_RESET();
 
     // Init buffers for packet statistics
-    STATS_init_packet_buffer(STATS_PACKET_BUFF_CAPACITY);
+    STATS_init_packet_buffer();
 #endif
 
 	// Start Contiki process which will take care of received packets

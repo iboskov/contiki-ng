@@ -50,9 +50,9 @@
 		uint8_t  power;
 		uint16_t count;
 	} txPacket_t;
+	// sizeof = 20B
 
-	void    STATS_init_packet_buffer(uint8_t capacity);
-	//void  STATS_free_packet_buffer(void);
+	void    STATS_init_packet_buffer(void);
 	uint8_t STATS_put_rx_packet(rxFrame_t *frame);
 	uint8_t STATS_put_tx_packet(txFrame_t *frame);
 	uint8_t STATS_get_rx_packet(rxPacket_t *packet);
