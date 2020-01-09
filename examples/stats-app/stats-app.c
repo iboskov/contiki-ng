@@ -38,6 +38,7 @@
 #include "net/ipv6/uip.h"
 
 #define SECOND 1000
+#define MAX_APP_TIME  (SECOND*1200)
 
 uint32_t counter = 0;
 extern uint8_t appIsRunning;
@@ -52,7 +53,7 @@ void STATS_close_app(void);
 /*---------------------------------------------------------------------------*/
 PROCESS(stats_process, "Stats app process");
 PROCESS(serial_input_process, "Serial input command");
-PROCESS(ping_process, "Pinging process");
+//PROCESS(ping_process, "Pinging process");
 AUTOSTART_PROCESSES(&serial_input_process);
 
 /*---------------------------------------------------------------------------*/
@@ -82,6 +83,8 @@ PROCESS_THREAD(stats_process, ev, data)
 	RF2XX_STATS_RESET();
 	STATS_clear_packet_stats();
 
+	printf("AD %d\n", MAX_APP_TIME);
+
 	// Optional: print help into log file
 	STATS_print_help();
 
@@ -91,25 +94,25 @@ PROCESS_THREAD(stats_process, ev, data)
 		counter++;
 
 	// Measure and display background noise
-	#if STATS_BGN_MEASURMENT_EVERY_5MS
-		if((counter%5) == 0) {
+	#if STATS_BGN_MEASURMENT_EVERY_10MS
+		if((counter%10) == 0) {
 			STATS_update_background_noise(STATS_BGN_BUFFER_CAPACITY);
 		}
 
 		#if STATS_BGN_3_CHANNELS
-			if((counter%(5 * SECOND)) == 0) {
+			if((counter%(10 * SECOND)) == 0) {
 				STATS_print_background_noise();
 			}
 		#elif STATS_BGN_6_CHANNELS	
-			if((counter%(2500)) == 0) {
+			if((counter%(5 * SECOND)) == 0) {
 				STATS_print_background_noise();
 			}
 		#elif STATS_BGN_16_CHANNELS
-			if((counter%(SECOND)) == 0) {
+			if((counter%(2 * SECOND)) == 0) {
 				STATS_print_background_noise();
 			}
 		#else
-			if((counter%(15 * SECOND)) == 0) {
+			if((counter%(30 * SECOND)) == 0) {
 				STATS_print_background_noise();
 			}
 		#endif
@@ -140,8 +143,8 @@ PROCESS_THREAD(stats_process, ev, data)
 			STATS_print_packet_stats();
 		}
 
-		// After 10 min send stop command ('=') and print driver statistics
-		if(counter == (SECOND * 600)){
+		// After max time send stop command ('=') and print driver statistics
+		if(counter == (MAX_APP_TIME)){
 			STATS_close_app();
 			PROCESS_EXIT();
 		}
@@ -155,6 +158,7 @@ PROCESS_THREAD(stats_process, ev, data)
 }
 
 /*---------------------------------------------------------------------------*/
+/*
 // TODODODO
 PROCESS_THREAD(ping_process, ev, data)
 {
@@ -178,12 +182,12 @@ PROCESS_THREAD(ping_process, ev, data)
 	printf( &remote_addr);
 	printf("\n");
 
-	/* Send ping request */
+	// Send ping request 
 	etimer_set(&timeout_timer, (5 * CLOCK_SECOND));
 	uip_icmp6_send(&remote_addr, ICMP6_ECHO_REQUEST, 0, 4);
 	PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timeout_timer));
 
-/*
+
 	if(curr_ping_output_func != NULL) {
 		SHELL_OUTPUT(output, "Timeout\n");
 		curr_ping_output_func = NULL;
@@ -193,10 +197,10 @@ PROCESS_THREAD(ping_process, ev, data)
 		SHELL_OUTPUT(output, ", len %u, ttl %u, delay %lu ms\n",
 		curr_ping_datalen, curr_ping_ttl, (1000*(clock_time() - timeout_timer.timer.start))/CLOCK_SECOND);
 	}
-*/
+
 	PROCESS_END();
 }
-
+*/
 
 
 /*---------------------------------------------------------------------------*/
@@ -283,6 +287,61 @@ STATS_print_help(void){
 	printf("\n");
 	printf("       DESCRIPTION\n");
 	printf("----------------------------------------------------------------------------\n");
+	printf("CH :(cnt)[s:us]: [del]val [del]val [del]val ...\n");
+
+	printf("CH   - Channel number, where RSSI is measured \n");
+	printf("cnt  - Count of measured values in one buffer \n");
+	printf("s    - Timestamp in seconds \n");
+	printf("us   - Timestamp in micro seconds \n");
+	printf("del  - Deviation from first measurment in micro seconds\n");
+	printf("val  - Measured RSSI values at theirs timestamp \n");
+	printf("----------------------------------------------------------------------------\n");
+	printf("T [s:us] type addr (chn len sqn | pow) uni \n");
+
+	printf("T    - Transmited packt count \n");
+	printf("s    - Timestamp in seconds \n");
+	printf("us   - Timestamp in micro seconds \n");
+	printf("type - Type of packet (D/B/A = data/beacon/ACK) \n");
+	printf("addr - Destination address \n");
+	printf("chn  - Channel number \n");
+	printf("len  - Packet length in bytes \n");
+	printf("sqn  - Sequence number \n");
+	printf("pow  - Transmision power in dBm\n");
+	printf("uni  - (U/M = unicast/multicast) \n");
+	printf("----------------------------------------------------------------------------\n");
+	printf("R [s:us] type addr (chn len sqn | rssi lqi) \n");
+
+	printf("R    - Received packt count \n");
+	printf("s    - Timestamp in seconds \n");
+	printf("us   - Timestamp in micro seconds \n");
+	printf("type - Type of packet (D/B/A = data/beacon/ACK) \n");
+	printf("addr - Source address \n");
+	printf("chn  - Channel number \n");
+	printf("len  - Packet length in bytes \n");
+	printf("sqn  - Sequence number \n");
+	printf("rssi - RSSI when packet was received\n");
+	printf("lqi  - LQI when packet was received \n");
+	printf("----------------------------------------------------------------------------\n");
+	printf("\n");
+	printf("On the end of file, there is a count of all received and transmited packets. \n");
+	printf("----------------------------------------------------------------------------\n");
+}
+/*
+void
+STATS_print_help(void){
+	uint8_t addr[8];
+
+	rf2xx_driver.get_object(RADIO_PARAM_64BIT_ADDR, &addr, 8);
+	printf("Device ID: ");
+	for(int j=0; j<8; j++){
+		printf("%X",addr[j]);
+	}
+
+	printf("\n"); 
+	printf("----------------------------------------------------------------------------\n");
+	printf("\n");
+	printf("       DESCRIPTION\n");
+	printf("----------------------------------------------------------------------------\n");
 	printf("CH[cc][xxx]([ss:us]): (tt)[v] (tt)[v] (tt)[v] ...\n");
 
 	printf("cc   - Channel number, where RSSI is measured \n");
@@ -326,3 +385,4 @@ STATS_print_help(void){
 	printf("On the end of file, there is a count of all received and transmited packets. \n");
 	printf("----------------------------------------------------------------------------\n");
 }
+*/

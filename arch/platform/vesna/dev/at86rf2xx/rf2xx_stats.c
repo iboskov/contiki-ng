@@ -385,6 +385,108 @@ STATS_display_packet_stats(void){
  *  Get RX & TX packet statistics from buffer and display them via UART.
  *  When this function is called, buffer is cleared
  *
+ */
+
+/*------------------------------------------------------------
+    T14 [ 61:122827] B 0xFFFF (C 15 L 35 S205 | P3.0) M
+    T15 [ 61:193676] D 0x4CF8 (C 20 L 94 S205 | P3.0) U
+
+    R16 [ 53: 10711] D 0x D01 (C 20 L 83 S 50 | R-67 Q255)
+    R17 [ 53: 81672] A        (C 26 L 17 S 46 | R-67 Q255)
+---------------------------------------------------------------
+*/
+void
+STATS_print_packet_stats(void){
+    rxPacket_t rp;
+    txPacket_t tp;
+
+    if(tb.count != 0){
+        printf("\n");
+        while(tb.count != 0){
+            STATS_get_tx_packet(&tp);
+            
+            printf("T%d ",tp.count);
+            printf("[%3ld:%6ld] ", tp.timestamp_s, tp.timestamp_us);
+            switch(tp.type){
+                case 0:
+                printf("B 0x%4X ", tp.dest_addr);
+                break;
+                case 1:
+                printf("D 0x%4X ", tp.dest_addr);
+                break;
+                case 2:
+                printf("A 0x%4X ", tp.dest_addr);
+                break;
+                default:
+                printf("Undef ");
+                break;
+            }
+                       
+            printf("(C%3d L%3d S%3d | P", tp.channel, tp.len, tp.sqn);
+            switch(tp.power){
+                case 0x0:
+                    printf("3.0"); break;
+                case 0x1:
+                    printf("2.8"); break;
+                case 0x2:
+                    printf("2.3"); break;
+                case 0x3:
+                    printf("1.8"); break;
+                case 0x4:
+                    printf("1.3"); break;
+                case 0x5:
+                    printf("0.7"); break;
+                case 0x6:
+                    printf("0.0"); break;
+                case 0x7:
+                    printf("-1"); break;
+                case 0x8:
+                    printf("-2"); break;
+                case 0x9:
+                    printf("-3"); break;
+                case 0xa:
+                    printf("-4"); break;
+                case 0xb:
+                    printf("-5"); break;
+                case 0xc:
+                    printf("-7"); break;
+                case 0xd:
+                    printf("-9"); break;
+                case 0xe:
+                    printf("-12"); break;
+                case 0xf:
+                    printf("-17"); break;
+            }
+            if(tp.unicast) printf(") U\n");
+            else printf(") M\n");
+        }
+    }
+    if(rb.count != 0){  
+        printf("\n");
+        while(rb.count != 0){
+            STATS_get_rx_packet(&rp);
+            
+            printf("R%d ",rp.count);
+            printf("[%3ld:%6ld] ", rp.timestamp_s, rp.timestamp_us);
+            switch(rp.type){
+                case 0:
+                printf("B 0x%4X ", rp.source_addr);
+                break;
+                case 1:
+                printf("D 0x%4X ", rp.source_addr);
+                break;
+                case 2:
+                printf("A        ");
+                break;
+                default:
+                printf("Undef");
+                break;
+            }
+            printf("(C%3d L%3d S%3d | R%3d Q%3d)\n",rp.channel, rp.len, rp.sqn, rp.rssi, rp.lqi);
+        }
+    }
+}
+/* -----------------------------
         T3 0 D 0xFFFF
         253:580174
         C15 L24 S205 | P0
@@ -392,7 +494,7 @@ STATS_display_packet_stats(void){
         R5 B 0xD01
         252:184481
         C15 L35 S205 | R-47 Q255
- */
+ ---------------------------------
 void
 STATS_print_packet_stats(void){
     rxPacket_t rp;
@@ -445,6 +547,7 @@ STATS_print_packet_stats(void){
         }
     }
 }
+*/
 
 void
 STATS_clear_packet_stats(void){
@@ -622,18 +725,18 @@ STATS_print_background_noise(void){
                 if(buffer[i].count != 0){
                     printf("\n");
                     printf("CH%d:",(i+11));
-                    printf("[%3d]", buffer[i].count);
+                    printf("(%3d)", buffer[i].count);
 
                     // Get first measurment - its timestamp
                     STATS_get_channel_rssi(buffer, i, &data);
-                    printf("(%lds:%ldus)  ", data.timestamp_s, data.timestamp_us);
+                    printf("[%ld:%ld]  ", data.timestamp_s, data.timestamp_us);
 
                     first_us = data.timestamp_us;
                     first_s = data.timestamp_s;
 
                     // Print firs measured RSSI
                     rssi =(3 * (data.rssi - 1) + RSSI_BASE_VAL);
-                    printf("(0)%d ", rssi);
+                    printf("[0]%d ", rssi);
 
                     // Go through buffer
                     while(buffer[i].count != 0){
@@ -645,9 +748,9 @@ STATS_print_background_noise(void){
                             // If seconds changed during measurments, us counter
                             // starts counting from zero...its max value is 1000 000
                             uint32_t seconds_passed = data.timestamp_s - first_s;
-                            printf("(%ld)", (((1000000 - first_us) + data.timestamp_us) + (seconds_passed * 1000000)));
+                            printf("[%ld]", (((1000000 - first_us) + data.timestamp_us) + (seconds_passed * 1000000)));
                         } else{
-                            printf("(%ld)", (data.timestamp_us - first_us));
+                            printf("[%ld]", (data.timestamp_us - first_us));
                         }
                         // Print its RSSI
                         rssi =(3 * (data.rssi - 1) + RSSI_BASE_VAL);

@@ -15,19 +15,19 @@
 
 #define STATS_CONF_PACKET_BUFF_CAPACITY           (20)  
 
-#define STATS_BGN_MEASURMENT_EVERY_5MS            (1)
+#define STATS_BGN_MEASURMENT_EVERY_10MS           (1)
 #define STATS_BGN_3_CHANNELS                      (1)
 #define STATS_BGN_6_CHANNELS                      (0)
 #define STATS_BGN_16_CHANNELS                     (0)
 
 /* Configuration table for measuring and displaying back ground noise:
    -------------------------|-------|-------|
-   Measure every:           |  1ms  |  5ms  |
+   Measure every:           |  1ms  |  10ms |
    -------------------------|-------|-------|
-                      1-CH  | (3s)  |  15s  |
-                      3-CH  |  1s   |   5s  |
-   Display every:     6-CH  | 0.5s  |  2.5s |
-                     16-CH  | 0.2s  |   1s  |
+                      1-CH  | (3s)  |  30s  |
+                      3-CH  |  1s   |  10s  |
+   Display every:     6-CH  | 0.5s  |   5s  |
+                     16-CH  | 0.2s  |   2s  |
    -------------------------|-------|-------|
 
 If no defines are set, app will go with default: measure BGN on one channel every 1 ms 

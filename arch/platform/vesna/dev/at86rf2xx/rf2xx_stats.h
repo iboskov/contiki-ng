@@ -9,10 +9,9 @@
 #if RF2XX_STATS
 	/* =========================
 	*    PACKETS STATISTICS
-	* ========================= 
+	*  ========================= 
 	*  Whenever packed is sent or received its statistics are stored in a circular buffer.
-	*  Each buffer (for RX packets and TX packets) must be first initialized (ex. in rf2xx_reset())
-	*  Later the statistics are displayed in app with functions display (human readable) and print.
+	*  Each buffer (for RX packets and TX packets) must be first initialized
 	*/
 
 	typedef struct{
@@ -66,7 +65,7 @@
 	*    BACKGROUND NOISE
 	* ========================= 
 	* On each channel store its RSSI in a buffer and later display it in app. Each channel has its buffer for 
-	* storing values. They are initialized when need - if we get on new channel, that has not beenyet init, 
+	* storing values. They are initialized when need - if we get on new channel, that has not been yet init, 
 	* it gets alocated then. List of allready init channels is stored in channel_stats_index - 16bit value,
 	* each bit representing its channel. 
 	*/
