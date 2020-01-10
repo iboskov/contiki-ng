@@ -17,8 +17,12 @@
  * PACKETS STATISTICS
  * ============================================================================= 
  */
-static buffer_t rb;
-static buffer_t tb;
+static buffer_t rxBuffer;
+static buffer_t txBuffer;
+
+static uint16_t txPacketCount = 1;
+static uint16_t rxPacketCount = 1;
+
 uint8_t rx_buffer[(20 * STATS_CONF_PACKET_BUFF_CAPACITY)];  //20 is the length of rxPacket_t struct
 uint8_t tx_buffer[(20 * STATS_CONF_PACKET_BUFF_CAPACITY)];
 
@@ -34,33 +38,33 @@ STATS_init_packet_buffer(){
     LOG_DBG("Init buffer!\n");
 
     // Size of packet struct - bigger than sum of elements (compiler aligments)
-    rb.size = sizeof(rxPacket_t);
+    rxBuffer.size = sizeof(rxPacket_t);
 
     // Reset buffer
     memset(rx_buffer, 0, (20 * STATS_CONF_PACKET_BUFF_CAPACITY));
 
     // Save a pointer of the begining of memory
-    rb.buffer_start = rx_buffer;
+    rxBuffer.buffer_start = rx_buffer;
 
     // Calculate pointer to the end of memory
-    rb.buffer_end = (char *)rb.buffer_start + STATS_CONF_PACKET_BUFF_CAPACITY * rb.size;
+    rxBuffer.buffer_end = (char *)rxBuffer.buffer_start + STATS_CONF_PACKET_BUFF_CAPACITY * rxBuffer.size;
 
     // Reset buffer variables
-    rb.head = rb.buffer_start;
-    rb.tail = rb.buffer_start;
-    rb.capacity = STATS_CONF_PACKET_BUFF_CAPACITY;
-    rb.count = 0;
+    rxBuffer.head = rxBuffer.buffer_start;
+    rxBuffer.tail = rxBuffer.buffer_start;
+    rxBuffer.capacity = STATS_CONF_PACKET_BUFF_CAPACITY;
+    rxBuffer.count = 0;
 
     // Repeat proces for TX buffer
-    tb.size = sizeof(txPacket_t);
+    txBuffer.size = sizeof(txPacket_t);
     memset(tx_buffer, 0, (20 * STATS_CONF_PACKET_BUFF_CAPACITY));
-    tb.buffer_start = tx_buffer;
+    txBuffer.buffer_start = tx_buffer;
 
-    tb.buffer_end = (char *)tb.buffer_start + STATS_CONF_PACKET_BUFF_CAPACITY * tb.size;
-    tb.capacity = STATS_CONF_PACKET_BUFF_CAPACITY;
-    tb.head = tb.buffer_start;
-    tb.tail = tb.buffer_start;
-    tb.count = 0;
+    txBuffer.buffer_end = (char *)txBuffer.buffer_start + STATS_CONF_PACKET_BUFF_CAPACITY * txBuffer.size;
+    txBuffer.capacity = STATS_CONF_PACKET_BUFF_CAPACITY;
+    txBuffer.head = txBuffer.buffer_start;
+    txBuffer.tail = txBuffer.buffer_start;
+    txBuffer.count = 0;
 }
 
 
@@ -75,13 +79,12 @@ uint8_t
 STATS_put_rx_packet(rxFrame_t *frame){
 
 // ----- Check if buffer has space -----
-    if((rb.count == rb.capacity) || (rb.head == rb.tail-(rb.size/4))){
+    if((rxBuffer.count == rxBuffer.capacity) || (rxBuffer.head == rxBuffer.tail-(rxBuffer.size/4))){
         LOG_WARN("RX Buffer is full! \n");
         // TODO: (If needed) Add count of packets that didn't fit into buffer
         return 0;
     }
 // ----- Get statistics -----
-    static uint16_t count = 1;
     rxPacket_t rxPacket;
     uint8_t temp;
     uint8_t dest, sour;
@@ -143,18 +146,18 @@ STATS_put_rx_packet(rxFrame_t *frame){
     rxPacket.len  = frame->len;
     rxPacket.channel  = bitRead(SR_CHANNEL);
 
-    rxPacket.count = count;
-    count++;
+    rxPacket.count = rxPacketCount;
+    rxPacketCount++;
 
 // ----- Copy statistics into buffer -----
-    memcpy(rb.head, &rxPacket, rb.size);
+    memcpy(rxBuffer.head, &rxPacket, rxBuffer.size);
 
     // Increase head pointer (must divide with 4, otherwise data gets overwritten)
-    rb.head = rb.head + (rb.size/4);    
-    if (rb.head == rb.buffer_end){
-        rb.head = rb.buffer_start;
+    rxBuffer.head = rxBuffer.head + (rxBuffer.size/4);    
+    if (rxBuffer.head == rxBuffer.buffer_end){
+        rxBuffer.head = rxBuffer.buffer_start;
     }
-    rb.count++;
+    rxBuffer.count++;
     return 1;
 }
 
@@ -168,17 +171,17 @@ STATS_put_rx_packet(rxFrame_t *frame){
 uint8_t
 STATS_get_rx_packet(rxPacket_t *packet){
 
-    if(rb.count == 0){
+    if(rxBuffer.count == 0){
         LOG_WARN("RX Buffer is empty.. \n");
         return 0;
     }
-    memcpy(packet, rb.tail, rb.size);
+    memcpy(packet, rxBuffer.tail, rxBuffer.size);
 
-    rb.tail = rb.tail + (rb.size/4);
-    if (rb.tail == rb.buffer_end){
-        rb.tail = rb.buffer_start;
+    rxBuffer.tail = rxBuffer.tail + (rxBuffer.size/4);
+    if (rxBuffer.tail == rxBuffer.buffer_end){
+        rxBuffer.tail = rxBuffer.buffer_start;
     }
-    rb.count--;
+    rxBuffer.count--;
     return 1;
 }
 
@@ -193,13 +196,12 @@ uint8_t
 STATS_put_tx_packet(txFrame_t *frame){
 
     // First check if buffer has space left
-    if((tb.count == tb.capacity) || (tb.head == tb.tail-(tb.size/4))){
+    if((txBuffer.count == txBuffer.capacity) || (txBuffer.head == txBuffer.tail-(txBuffer.size/4))){
         LOG_WARN("TX Buffer is full! \n");
         return 0;
     }
 
 // ----- Get statistics -----
-    static uint16_t count = 1;
     txPacket_t txPacket;
     uint8_t tmp;
 
@@ -256,19 +258,19 @@ STATS_put_tx_packet(txFrame_t *frame){
     txPacket.power   = bitRead(SR_TX_PWR);
     txPacket.len = frame->len;
 
-    txPacket.count = count;
-    count++;
+    txPacket.count = txPacketCount;
+    txPacketCount++;
 
 // ----- Copy statistics into buffer -----
     // Add colected statistics into buffer
-    memcpy(tb.head, &txPacket, tb.size);
+    memcpy(txBuffer.head, &txPacket, txBuffer.size);
 
     // Increase head pointer
-    tb.head = tb.head + (tb.size/4);
-    if (tb.head == tb.buffer_end){
-        tb.head = tb.buffer_start;
+    txBuffer.head = txBuffer.head + (txBuffer.size/4);
+    if (txBuffer.head == txBuffer.buffer_end){
+        txBuffer.head = txBuffer.buffer_start;
     }
-    tb.count++;
+    txBuffer.count++;
     return 1;
 }
 
@@ -282,17 +284,17 @@ STATS_put_tx_packet(txFrame_t *frame){
 uint8_t
 STATS_get_tx_packet(txPacket_t *packet){
 
-    if(tb.count == 0){
+    if(txBuffer.count == 0){
         LOG_WARN("TX Buffer is empty.. \n");
         return 0;
     }
-    memcpy(packet, tb.tail, tb.size);
+    memcpy(packet, txBuffer.tail, txBuffer.size);
 
-    tb.tail = tb.tail + (tb.size/4);    
-    if (tb.tail == tb.buffer_end){
-        tb.tail = tb.buffer_start;
+    txBuffer.tail = txBuffer.tail + (txBuffer.size/4);    
+    if (txBuffer.tail == txBuffer.buffer_end){
+        txBuffer.tail = txBuffer.buffer_start;
     }
-    tb.count--;
+    txBuffer.count--;
     return 1;
 }
 
@@ -314,17 +316,17 @@ STATS_get_tx_packet(txPacket_t *packet){
  */
 void
 STATS_display_packet_stats(void){
-    rxPacket_t rp;
-    txPacket_t tp;
+    rxPacket_t rxPacket;
+    txPacket_t txPacket;
 
-    if(tb.count != 0){
+    if(txBuffer.count != 0){
         LOG_INFO("--- TX PACKET STATISTICS ---\n");   
-        while(tb.count != 0){
-            STATS_get_tx_packet(&tp);
+        while(txBuffer.count != 0){
+            STATS_get_tx_packet(&txPacket);
 
-            LOG_INFO("Packet %d was: ",(tp.count));
-            if(tp.unicast == 1)LOG_INFO_("unicast ");
-            switch(tp.type){
+            LOG_INFO("Packet %d was: ",(txPacket.count));
+            if(txPacket.unicast == 1)LOG_INFO_("unicast ");
+            switch(txPacket.type){
                 case 0:
                 LOG_INFO_("BCN ");
                 break;
@@ -335,33 +337,33 @@ STATS_display_packet_stats(void){
                 LOG_INFO_("ACK ");
                 break;
             }
-            LOG_INFO_("for node 0x%X\n", tp.dest_addr);
-            LOG_INFO("* Timestamp: %lds and %ldus\n", tp.timestamp_s, tp.timestamp_us);
-            LOG_INFO("* CHN: %d", tp.channel);
-            LOG_INFO_(" | LEN: %d", tp.len);
-            LOG_INFO_(" | SQN: %d\n", tp.sqn);
-            if(tp.power == 0){
+            LOG_INFO_("for node 0x%X\n", txPacket.dest_addr);
+            LOG_INFO("* Timestamp: %lds and %ldus\n", txPacket.timestamp_s, txPacket.timestamp_us);
+            LOG_INFO("* CHN: %d", txPacket.channel);
+            LOG_INFO_(" | LEN: %d", txPacket.len);
+            LOG_INFO_(" | SQN: %d\n", txPacket.sqn);
+            if(txPacket.power == 0){
                 LOG_INFO("* Power: 3dBm\n");          // page 106 of datasheet
             } else {
-                LOG_INFO("* Power %d\n", tp.power);
+                LOG_INFO("* Power %d\n", txPacket.power);
             }
             LOG_INFO("\n");
         }
     }
-    if(rb.count != 0){
+    if(rxBuffer.count != 0){
         LOG_INFO("--- RX PACKET STATISTICS ---\n");       
-        while(rb.count != 0){
-            STATS_get_rx_packet(&rp);
+        while(rxBuffer.count != 0){
+            STATS_get_rx_packet(&rxPacket);
 
-            LOG_INFO("Packet %d was: ", (rp.count)); 
-            switch(rp.type){
+            LOG_INFO("Packet %d was: ", (rxPacket.count)); 
+            switch(rxPacket.type){
                 case 0:
                 LOG_INFO_("eBCN ");
-                LOG_INFO_("from node 0x%X\n", rp.source_addr);
+                LOG_INFO_("from node 0x%X\n", rxPacket.source_addr);
                 break;
                 case 1:
                 LOG_INFO_("DATA ");
-                LOG_INFO_("from node 0x%X\n", rp.source_addr);
+                LOG_INFO_("from node 0x%X\n", rxPacket.source_addr);
                 break;
                 case 2:
                 LOG_INFO_("ACK \n");
@@ -370,12 +372,12 @@ STATS_display_packet_stats(void){
                 default:
                 LOG_INFO_("Unknown type (3 = CMD, 7 = BCN_REQ");
             }
-            LOG_INFO("* Timestamp: %lds and %ldus\n", rp.timestamp_s, rp.timestamp_us);
-            LOG_INFO("* CHN: %d", rp.channel);
-            LOG_INFO_(" | LEN: %d", rp.len);
-            LOG_INFO_(" | SQN: %d\n", rp.sqn);
-            LOG_INFO("* RSSI: %d", rp.rssi);
-            LOG_INFO_(" | LQI: %d\n", rp.lqi);
+            LOG_INFO("* Timestamp: %lds and %ldus\n", rxPacket.timestamp_s, rxPacket.timestamp_us);
+            LOG_INFO("* CHN: %d", rxPacket.channel);
+            LOG_INFO_(" | LEN: %d", rxPacket.len);
+            LOG_INFO_(" | SQN: %d\n", rxPacket.sqn);
+            LOG_INFO("* RSSI: %d", rxPacket.rssi);
+            LOG_INFO_(" | LQI: %d\n", rxPacket.lqi);
             LOG_INFO("\n");
         }
     }
@@ -388,42 +390,42 @@ STATS_display_packet_stats(void){
  */
 
 /*------------------------------------------------------------
-    T14 [ 61:122827] B 0xFFFF (C 15 L 35 S205 | P3.0) M
-    T15 [ 61:193676] D 0x4CF8 (C 20 L 94 S205 | P3.0) U
+    T 14 [ 61:122827] B 0xFFFF (C 15 L 35 S205 | P3.0) M
+    T 15 [ 61:193676] D 0x4CF8 (C 20 L 94 S205 | P3.0) U
 
-    R16 [ 53: 10711] D 0x D01 (C 20 L 83 S 50 | R-67 Q255)
-    R17 [ 53: 81672] A        (C 26 L 17 S 46 | R-67 Q255)
+    R 16 [ 53: 10711] D 0x D01 (C 20 L 83 S 50 | R-67 Q255)
+    R 17 [ 53: 81672] A        (C 26 L 17 S 46 | R-67 Q255)
 ---------------------------------------------------------------
 */
 void
 STATS_print_packet_stats(void){
-    rxPacket_t rp;
-    txPacket_t tp;
+    rxPacket_t rxPacket;
+    txPacket_t txPacket;
 
-    if(tb.count != 0){
+    if(txBuffer.count != 0){
         printf("\n");
-        while(tb.count != 0){
-            STATS_get_tx_packet(&tp);
+        while(txBuffer.count != 0){
+            STATS_get_tx_packet(&txPacket);
             
-            printf("T%d ",tp.count);
-            printf("[%3ld:%6ld] ", tp.timestamp_s, tp.timestamp_us);
-            switch(tp.type){
+            printf("T%3d ",txPacket.count);
+            printf("[%3ld:%6ld] ", txPacket.timestamp_s, txPacket.timestamp_us);
+            switch(txPacket.type){
                 case 0:
-                printf("B 0x%4X ", tp.dest_addr);
+                printf("B 0x%4X ", txPacket.dest_addr);
                 break;
                 case 1:
-                printf("D 0x%4X ", tp.dest_addr);
+                printf("D 0x%4X ", txPacket.dest_addr);
                 break;
                 case 2:
-                printf("A 0x%4X ", tp.dest_addr);
+                printf("A 0x%4X ", txPacket.dest_addr);
                 break;
                 default:
                 printf("Undef ");
                 break;
             }
                        
-            printf("(C%3d L%3d S%3d | P", tp.channel, tp.len, tp.sqn);
-            switch(tp.power){
+            printf("(C%3d L%3d S%3d | P", txPacket.channel, txPacket.len, txPacket.sqn);
+            switch(txPacket.power){
                 case 0x0:
                     printf("3.0"); break;
                 case 0x1:
@@ -457,23 +459,23 @@ STATS_print_packet_stats(void){
                 case 0xf:
                     printf("-17"); break;
             }
-            if(tp.unicast) printf(") U\n");
+            if(txPacket.unicast) printf(") U\n");
             else printf(") M\n");
         }
     }
-    if(rb.count != 0){  
+    if(rxBuffer.count != 0){  
         printf("\n");
-        while(rb.count != 0){
-            STATS_get_rx_packet(&rp);
+        while(rxBuffer.count != 0){
+            STATS_get_rx_packet(&rxPacket);
             
-            printf("R%d ",rp.count);
-            printf("[%3ld:%6ld] ", rp.timestamp_s, rp.timestamp_us);
-            switch(rp.type){
+            printf("R%3d ",rxPacket.count);
+            printf("[%3ld:%6ld] ", rxPacket.timestamp_s, rxPacket.timestamp_us);
+            switch(rxPacket.type){
                 case 0:
-                printf("B 0x%4X ", rp.source_addr);
+                printf("B 0x%4X ", rxPacket.source_addr);
                 break;
                 case 1:
-                printf("D 0x%4X ", rp.source_addr);
+                printf("D 0x%4X ", rxPacket.source_addr);
                 break;
                 case 2:
                 printf("A        ");
@@ -482,7 +484,7 @@ STATS_print_packet_stats(void){
                 printf("Undef");
                 break;
             }
-            printf("(C%3d L%3d S%3d | R%3d Q%3d)\n",rp.channel, rp.len, rp.sqn, rp.rssi, rp.lqi);
+            printf("(C%3d L%3d S%3d | R%3d Q%3d)\n",rxPacket.channel, rxPacket.len, rxPacket.sqn, rxPacket.rssi, rxPacket.lqi);
         }
     }
 }
@@ -497,43 +499,43 @@ STATS_print_packet_stats(void){
  ---------------------------------
 void
 STATS_print_packet_stats(void){
-    rxPacket_t rp;
-    txPacket_t tp;
+    rxPacket_t rxPacket;
+    txPacket_t txPacket;
 
-    if(tb.count != 0){
-        while(tb.count != 0){
-            STATS_get_tx_packet(&tp);
+    if(txBuffer.count != 0){
+        while(txBuffer.count != 0){
+            STATS_get_tx_packet(&txPacket);
             printf("\n");
-            printf("T%d %d ",tp.count, tp.unicast);
-            switch(tp.type){
+            printf("T%d %d ",txPacket.count, txPacket.unicast);
+            switch(txPacket.type){
                 case 0:
-                printf("B 0x%X\n", tp.dest_addr);
+                printf("B 0x%X\n", txPacket.dest_addr);
                 break;
                 case 1:
-                printf("D 0x%X\n", tp.dest_addr);
+                printf("D 0x%X\n", txPacket.dest_addr);
                 break;
                 case 2:
-                printf("A 0x%X\n", tp.dest_addr);
+                printf("A 0x%X\n", txPacket.dest_addr);
                 break;
                 default:
                 printf("Un\n");
                 break;
             }
-            printf("%ld:%ld\n", tp.timestamp_s, tp.timestamp_us);
-            printf("C%d L%d S%d | P%d\n", tp.channel, tp.len, tp.sqn, tp.power);
+            printf("%ld:%ld\n", txPacket.timestamp_s, txPacket.timestamp_us);
+            printf("C%d L%d S%d | P%d\n", txPacket.channel, txPacket.len, txPacket.sqn, txPacket.power);
         }
     }
-    if(rb.count != 0){  
-        while(rb.count != 0){
-            STATS_get_rx_packet(&rp);
+    if(rxBuffer.count != 0){  
+        while(rxBuffer.count != 0){
+            STATS_get_rx_packet(&rxPacket);
             printf("\n");
-            printf("R%d ",rp.count);
-            switch(rp.type){
+            printf("R%d ",rxPacket.count);
+            switch(rxPacket.type){
                 case 0:
-                printf("B 0x%X\n", rp.source_addr);
+                printf("B 0x%X\n", rxPacket.source_addr);
                 break;
                 case 1:
-                printf("D 0x%X\n", rp.source_addr);
+                printf("D 0x%X\n", rxPacket.source_addr);
                 break;
                 case 2:
                 printf("A\n");
@@ -542,8 +544,8 @@ STATS_print_packet_stats(void){
                 printf("Un\n");
                 break;
             }
-            printf("%ld:%ld\n", rp.timestamp_s, rp.timestamp_us);
-            printf("C%d L%d S%d | R%d Q%d\n",rp.channel, rp.len, rp.sqn, rp.rssi, rp.lqi);
+            printf("%ld:%ld\n", rxPacket.timestamp_s, rxPacket.timestamp_us);
+            printf("C%d L%d S%d | R%d Q%d\n",rxPacket.channel, rxPacket.len, rxPacket.sqn, rxPacket.rssi, rxPacket.lqi);
         }
     }
 }
@@ -553,19 +555,21 @@ void
 STATS_clear_packet_stats(void){
     // Reset buffer variables - just read the values and don't display them
 
-    rxPacket_t rp;
-    txPacket_t tp;
+    rxPacket_t rxPacket;
+    txPacket_t txPacket;
 
-    if(tb.count != 0){
-        while(tb.count != 0){
-            STATS_get_tx_packet(&tp);
+    if(txBuffer.count != 0){
+        while(txBuffer.count != 0){
+            STATS_get_tx_packet(&txPacket);
         }
     }
-    if(rb.count != 0){  
-        while(rb.count != 0){
-            STATS_get_rx_packet(&rp);
+    if(rxBuffer.count != 0){  
+        while(rxBuffer.count != 0){
+            STATS_get_rx_packet(&rxPacket);
         }
     }
+    rxPacketCount = 1;
+    txPacketCount = 1;
 }
 
 
@@ -725,14 +729,16 @@ STATS_print_background_noise(void){
                 if(buffer[i].count != 0){
                     printf("\n");
                     printf("CH%d:",(i+11));
-                    printf("(%3d)", buffer[i].count);
 
                     // Get first measurment - its timestamp
                     STATS_get_channel_rssi(buffer, i, &data);
-                    printf("[%ld:%ld]  ", data.timestamp_s, data.timestamp_us);
+                    printf("[%3ld:%6ld] ", data.timestamp_s, data.timestamp_us);
 
                     first_us = data.timestamp_us;
                     first_s = data.timestamp_s;
+
+                    // Print count of all measurements
+                    printf("(%3d) ", buffer[i].count);
 
                     // Print firs measured RSSI
                     rssi =(3 * (data.rssi - 1) + RSSI_BASE_VAL);

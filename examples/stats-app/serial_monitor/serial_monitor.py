@@ -6,8 +6,8 @@ import serial
 from datetime import datetime
 from timeit import default_timer as timer
 
-LINES_TO_READ = 10000
-MAX_APP_TIME  = 1200000
+LINES_TO_READ = 2000
+MAX_APP_TIME  = 1200
 
 DEFAULT_FILE_NAME = "rf2xx_stats.txt"
 
@@ -178,19 +178,28 @@ if(not monitor.gotResponse):
 # ----------------------------------------------------------------------
 # Read input lines while LINES_TO_READ or until stop command '='
 # ----------------------------------------------------------------------
-# Get max duration of the app ("AD 1200000")
+# Get max duration of the app ("AD 1200")
 value = monitor.read_line()
 if((chr(value[0]) == 'A') and (chr(value[1])== 'D')):
     MAX_APP_TIME = int(value[3:])
 
-print("Start logging serial input (max " + str(MAX_APP_TIME/60000) + "min)") 
+print("Start logging serial input:") 
 
 # Open file to append serial input to it
 monitor.file = open(monitor.filename, "a")
 
 line = 1
+startTime = timer()
+elapsedMin = 0
+
 try:
-    while(line <= LINES_TO_READ):
+    while(line <= LINES_TO_READ):   #while(true)
+
+        # Measure approoooximate elapsed time - just for a feeling 
+        if((timer() - startTime) > 60):
+            elapsedMin += 1
+            startTime = timer()
+        
         # Read one line (until \n char)
         value = monitor.read_line()
 
@@ -198,7 +207,7 @@ try:
         if value:           
             # If stop command '=' found, exit monitor
             if(chr(value[0]) == '='):
-                print("Found stop command (" + str(MAX_APP_TIME/60000) +
+                print("Found stop command (" + str(MAX_APP_TIME/60) +
                 " minutes has elapsed)..stored " + str(line) + " lines.")
                 break
 
@@ -206,7 +215,9 @@ try:
             monitor.store_to_file(value)
 
             # Update status line in terminal
-            print("Line " + str(line) +"/(" + str(LINES_TO_READ) +")", end="\r")
+            print("Line: " + str(line) + " (~ " + str(elapsedMin) + "|" + 
+                             str(int(MAX_APP_TIME/60)) + " min)", end="\r")
+
             line += 1
     
     print("")

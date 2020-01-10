@@ -48,8 +48,6 @@ void STATS_input_command(char *data);
 void STATS_set_device_as_root(void);
 void STATS_close_app(void);
 
-//TODO: popravi packet count - ko resetiraš ga postavi na 0
-
 /*---------------------------------------------------------------------------*/
 PROCESS(stats_process, "Stats app process");
 PROCESS(serial_input_process, "Serial input command");
@@ -81,9 +79,10 @@ PROCESS_THREAD(stats_process, ev, data)
 
 	// Empty buffers if they have some values from before
 	RF2XX_STATS_RESET();
-	STATS_clear_packet_stats();
+	STATS_clear_packet_stats();	// Read them without displaying
+	STATS_clear_background_noise();
 
-	printf("AD %d\n", MAX_APP_TIME);
+	printf("AD %d\n", (MAX_APP_TIME/1000));
 
 	// Optional: print help into log file
 	STATS_print_help();
