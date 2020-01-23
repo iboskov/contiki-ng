@@ -1,8 +1,8 @@
-#include <stdio.h>      // For fprint
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include "rf2xx_stats.h"
-#include "rf2xx.h"      // for LOG_LEVEL_RF2XX
+#include "rf2xx.h"
 #include "heapmem.h"
 #include "sys/log.h"
 
@@ -13,10 +13,9 @@
 #if RF2XX_STATS
 
 
-/* =============================================================================
+/**********************************************************************************************************
  * PACKETS STATISTICS
- * ============================================================================= 
- */
+ **********************************************************************************************************/
 static buffer_t rxBuffer;
 static buffer_t txBuffer;
 
@@ -26,12 +25,8 @@ static uint16_t rxPacketCount = 1;
 uint8_t rx_buffer[(20 * STATS_CONF_PACKET_BUFF_CAPACITY)];  //20 is the length of rxPacket_t struct
 uint8_t tx_buffer[(20 * STATS_CONF_PACKET_BUFF_CAPACITY)];
 
-/** @brief Prepare 2 buffers for storing TX and RX packets statistics.
- *
- * Allocate memory for 2 ring buffers, depending on input capacity - number of packets to be
- * stored. One buffer is for RX packets, other for TX. Reset all variables of ring buffer.
- *
- * @param  Number of max packet that can be stored. 
+/** 
+ * @brief Prepare 2 buffers for storing TX and RX packets statistics.
  */
 void
 STATS_init_packet_buffer(){
@@ -68,12 +63,10 @@ STATS_init_packet_buffer(){
 }
 
 
-/** @brief Put statistics of received packet into RX buffer.
- *
- * Get statistic out of the received payload and store them into buffer.
- * 
- * @param  Pointer to the struct variable where received payload is stored.
- * @return  If succes return 1, else (if buffer is full) return 0  
+/** 
+ * @brief Put statistics of received packet into RX buffer.
+ * @param  frame pointer to the struct variable where received payload is stored.
+ * @return  1 if success, else  (if buffer is full)  
  */
 uint8_t
 STATS_put_rx_packet(rxFrame_t *frame){
@@ -161,12 +154,10 @@ STATS_put_rx_packet(rxFrame_t *frame){
     return 1;
 }
 
-/** @brief Get statistics of received packet from RX buffer.
- *
- * Copy statistics from buffer and move tail pointer.
- * 
- * @param  Pointer to the struct variable where statistics will be stored.
- * @return  If succes return 1, else (if buffer is empty) return 0  
+/** 
+ * @brief Get statistics of received packet from RX buffer.
+ * @param  packet pointer to the struct variable where statistics will be stored.
+ * @return  1 if success, else 0 (if buffer is empty)   
  */
 uint8_t
 STATS_get_rx_packet(rxPacket_t *packet){
@@ -185,12 +176,10 @@ STATS_get_rx_packet(rxPacket_t *packet){
     return 1;
 }
 
-/** @brief Put statistics of transmited packet into buffer.
- *
- * Get statistics out of a payload and then store them into buffer.
- * 
- * @param  Pointer to the struct variable where prepared payload is stored.
- * @return  If succes return 1, else (if buffer is full) return 0  
+/** 
+ * @brief Put statistics of transmited packet into buffer.
+ * @param  frame pointer to the struct variable where prepared payload is stored.
+ * @return  1 if success, else 0 (if buffer is full)  
  */
 uint8_t
 STATS_put_tx_packet(txFrame_t *frame){
@@ -274,12 +263,10 @@ STATS_put_tx_packet(txFrame_t *frame){
     return 1;
 }
 
-/** @brief Get statistics of transmited packet from TX buffer.
- * 
- * Copy statistics from buffer and move tail pointer.
- * 
- * @param  Pointer to the struct variable where statistics will be stored.
- * @return  If succes return 1, else (if buffer is empty) return 0  
+/** 
+ * @brief Get statistics of transmited packet from TX buffer.
+ * @param  packet pointer to the struct variable where statistics will be stored.
+ * @return  1 if success, else 0 (if buffer is empty)   
  */
 uint8_t
 STATS_get_tx_packet(txPacket_t *packet){
@@ -300,9 +287,7 @@ STATS_get_tx_packet(txPacket_t *packet){
 
 
 
-/** @brief Costum function for stats-app.c. --> HUMAN READABLE
- *  When this function is called, buffer is cleared
- * 
+/*------------------------------------------------------------ 
     --- TX PACKET STATISTICS ---
     Packet 11 was: unicast DATA for node 0x4CF8
     * CHN: 26 | LEN: 21 | SQN: 51
@@ -313,6 +298,9 @@ STATS_get_tx_packet(txPacket_t *packet){
     * CHN: 26 | LEN: 35 | SQN: 53
     * RSSI: -82 | LQI: 255
     * Timestamp: 64211
+ ------------------------------------------------------------*/
+/** 
+ * @brief Costum function for stats-app.c.
  */
 void
 STATS_display_packet_stats(void){
@@ -383,11 +371,6 @@ STATS_display_packet_stats(void){
     }
 }
 
-/** @brief Costum function for stats-app.c.  --> FOR SERIAL MONITOR
- *  Get RX & TX packet statistics from buffer and display them via UART.
- *  When this function is called, buffer is cleared
- *
- */
 
 /*------------------------------------------------------------
     T 14 [ 61:122827] B 0xFFFF (C 15 L 35 S205 | P3.0) M
@@ -395,8 +378,10 @@ STATS_display_packet_stats(void){
 
     R 16 [ 53: 10711] D 0x D01 (C 20 L 83 S 50 | R-67 Q255)
     R 17 [ 53: 81672] A        (C 26 L 17 S 46 | R-67 Q255)
----------------------------------------------------------------
-*/
+---------------------------------------------------------------*/
+/** 
+ * @brief Costum function for stats-app.c.
+ */
 void
 STATS_print_packet_stats(void){
     rxPacket_t rxPacket;
@@ -551,9 +536,12 @@ STATS_print_packet_stats(void){
 }
 */
 
+
+/** 
+ * @brief Reset buffer variables - just read the values and don't display them
+ */
 void
 STATS_clear_packet_stats(void){
-    // Reset buffer variables - just read the values and don't display them
 
     rxPacket_t rxPacket;
     txPacket_t txPacket;
@@ -573,23 +561,24 @@ STATS_clear_packet_stats(void){
 }
 
 
-/* =============================================================================
- *  BACKGROUND NOISE
- * ============================================================================= 
- */
- // static puts everything on 0
+
+/**********************************************************************************************************
+ * BACKGROUND NOISE
+ **********************************************************************************************************/
+
 static uint16_t channel_stats_index;   
 static buffer_t buffer[16];
 
-/** @brief Prepare buffer for storing RSSI values
+/** 
+ * @brief Prepare buffer for storing RSSI values
  *
  * Allocate memory for ring buffers, depending on channel number and input 
  * capacity - number of valuesto be stored. Reset all variables of ring buffer.
  * Add channel to the channel index.
  *
- * @param  Pointer to buffer where values are stored.
- * @param  Channel number of buffer
- * @param  Max size of buffer
+ * @param  b  array of channel buffers
+ * @param  ch number of buffer (= channel number)
+ * @param  capacity size of buffer
  * @return 1 if success, 0 if not
  */
 uint8_t
@@ -617,6 +606,9 @@ STATS_init_channel_buffer(buffer_t *b, uint8_t ch, uint16_t capacity){
     return 1;
 }
 
+/** 
+ * @brief Free allocated memory
+ */
 void
 STATS_free_channel_buffer(buffer_t *b, uint8_t ch){
     heapmem_free(b[ch].buffer_start);
@@ -628,9 +620,11 @@ STATS_free_channel_buffer(buffer_t *b, uint8_t ch){
     channel_stats_index &= tmp;
 }
 
-/** @brief Put new value into buffer of that channel
- * When RSSI is measured, store its value into buffer.
- *
+/** 
+ * @brief When measured, put new value into buffer of that channel
+ * @param b  array of channel buffers
+ * @param ch channel on which value is measured
+ * @param bgn struct with rssi value and time-stamp
  * @return 1 if success, 0 if not
  */
 uint8_t
@@ -651,8 +645,11 @@ STATS_put_channel_rssi(buffer_t *b, uint8_t ch, bgNoise_t *bgn){
     return 1;
 }
 
-/** @brief Get value from buffer of selected channel
- *
+/** 
+ * @brief Get value from buffer of selected channel
+ * @param b  array of channel buffers
+ * @param ch channel on which value is measured
+ * @param bgn struct with rssi value and time-stamp
  * @return 1 if success, 0 if not
  */
 uint8_t
@@ -674,12 +671,16 @@ STATS_get_channel_rssi(buffer_t *b, uint8_t ch, bgNoise_t *bgn){
 
 
 
-/** @brief Check if buffer of selected channel is init and store the value into it
- * If buffer is not yet initialized, first init it and then store value.
- *
- * @param  Capacity of buffer
+
+
+// Added so it won't print "Buffer full" all the time if something goes wrong
+static uint8_t suc_update = 1;
+
+/** 
+ * @brief Check if buffer of selected channel is init and store the value into it.
+ *        If buffer is not yet initialized, first init it and then store value.
+ * @param capacity of buffer
  */
-static uint8_t suc_update = 1;// Added so it won't print "Buffer full" all the time if something goes wrong
 void 
 STATS_update_background_noise(uint16_t capacity){
     uint8_t suc_init = 0;
@@ -707,12 +708,9 @@ STATS_update_background_noise(uint16_t capacity){
     }
 }
 
-/** @brief Read data from buffer for each channel and send it via UART
-
-    C15(200): -94 -94
-    C20(300): -94 -91 -79 -79 -79
-    C26(500): -87 -87 -91 -87
-*/
+/** 
+ * @brief Read data from buffer for each channel and send it via UART
+ */
 void
 STATS_print_background_noise(void){
     bgNoise_t data;
@@ -770,6 +768,9 @@ STATS_print_background_noise(void){
     }
 }
 
+/** 
+ * @brief Clear buffers - read values but don't display them 
+ */
 void
 STATS_clear_background_noise(void){
     // Go through all channels
@@ -781,9 +782,10 @@ STATS_clear_background_noise(void){
     }
 }
 
-/** @brief Check if buffer was initialized for certain channel
- *  @param  channel number to check 
-*/
+/** 
+ * @brief Check if buffer was initialized for certain channel
+ * @param  channel number to check 
+ */
 uint8_t
 STATS_is_channel_init(uint8_t channel){
     uint16_t tmp = channel_stats_index;
@@ -794,10 +796,9 @@ STATS_is_channel_init(uint8_t channel){
 }
 
 
-/* =============================================================================
- *     DRIVER STATISTICS
- * ============================================================================= 
-*/
+/**********************************************************************************************************
+ * DRIVER STATISTICS
+ **********************************************************************************************************/
 
 extern const struct radio_driver rf2xx_driver;
 

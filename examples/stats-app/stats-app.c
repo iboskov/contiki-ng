@@ -37,12 +37,14 @@
 #include "arch/platform/vesna/dev/at86rf2xx/rf2xx_stats.h"
 #include "net/ipv6/uip.h"
 
-#define SECOND 1000
+/*---------------------------------------------------------------------------*/
+#define SECOND 		  (1000)
 #define MAX_APP_TIME  (SECOND*1200)
 
 uint32_t counter = 0;
 extern uint8_t appIsRunning;
 
+/*---------------------------------------------------------------------------*/
 void STATS_print_help(void);
 void STATS_input_command(char *data);
 void STATS_set_device_as_root(void);
@@ -52,6 +54,7 @@ void STATS_close_app(void);
 PROCESS(stats_process, "Stats app process");
 PROCESS(serial_input_process, "Serial input command");
 //PROCESS(ping_process, "Pinging process");
+
 AUTOSTART_PROCESSES(&serial_input_process);
 
 /*---------------------------------------------------------------------------*/
@@ -79,7 +82,7 @@ PROCESS_THREAD(stats_process, ev, data)
 
 	// Empty buffers if they have some values from before
 	RF2XX_STATS_RESET();
-	STATS_clear_packet_stats();	// Read them without displaying
+	STATS_clear_packet_stats();
 	STATS_clear_background_noise();
 
 	printf("AD %d\n", (MAX_APP_TIME/1000));
@@ -116,6 +119,7 @@ PROCESS_THREAD(stats_process, ev, data)
 			}
 		#endif
 	#else
+
 		STATS_update_background_noise(STATS_BGN_BUFFER_CAPACITY);
 
 		#if STATS_BGN_3_CHANNELS
@@ -286,45 +290,18 @@ STATS_print_help(void){
 	printf("\n");
 	printf("       DESCRIPTION\n");
 	printf("----------------------------------------------------------------------------\n");
-	printf("CH :(cnt)[s:us]: [del]val [del]val [del]val ...\n");
-
-	printf("CH   - Channel number, where RSSI is measured \n");
-	printf("cnt  - Count of measured values in one buffer \n");
-	printf("s    - Timestamp in seconds \n");
-	printf("us   - Timestamp in micro seconds \n");
-	printf("del  - Deviation from first measurment in micro seconds\n");
-	printf("val  - Measured RSSI values at theirs timestamp \n");
+	printf("CH :(buff-count)[time-stamp]: [delay]RSSI [delay]RSSI [delay]RSSI ...\n");
 	printf("----------------------------------------------------------------------------\n");
-	printf("T [s:us] type addr (chn len sqn | pow) uni \n");
-
-	printf("T    - Transmited packt count \n");
-	printf("s    - Timestamp in seconds \n");
-	printf("us   - Timestamp in micro seconds \n");
-	printf("type - Type of packet (D/B/A = data/beacon/ACK) \n");
-	printf("addr - Destination address \n");
-	printf("chn  - Channel number \n");
-	printf("len  - Packet length in bytes \n");
-	printf("sqn  - Sequence number \n");
-	printf("pow  - Transmision power in dBm\n");
-	printf("uni  - (U/M = unicast/multicast) \n");
+	printf("Tx [time-stamp] packet-type  dest-addr (chn len sqn | pow) BC/UC \n");
 	printf("----------------------------------------------------------------------------\n");
-	printf("R [s:us] type addr (chn len sqn | rssi lqi) \n");
-
-	printf("R    - Received packt count \n");
-	printf("s    - Timestamp in seconds \n");
-	printf("us   - Timestamp in micro seconds \n");
-	printf("type - Type of packet (D/B/A = data/beacon/ACK) \n");
-	printf("addr - Source address \n");
-	printf("chn  - Channel number \n");
-	printf("len  - Packet length in bytes \n");
-	printf("sqn  - Sequence number \n");
-	printf("rssi - RSSI when packet was received\n");
-	printf("lqi  - LQI when packet was received \n");
+	printf("Rx [time-stamp] packet-type  sour-addr (chn len sqn | rssi lqi) \n");
 	printf("----------------------------------------------------------------------------\n");
 	printf("\n");
 	printf("On the end of file, there is a count of all received and transmited packets. \n");
 	printf("----------------------------------------------------------------------------\n");
 }
+
+
 /*
 void
 STATS_print_help(void){
