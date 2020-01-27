@@ -12,7 +12,7 @@ MAX_APP_TIME  = 1200
 DEFAULT_FILE_NAME = "rf2xx_stats.txt"
 
 BASEPORT = "/dev/ttyS"
-BAUD = 112500
+BAUD = 115200
 PARITY = serial.PARITY_NONE
 STOPBIT = serial.STOPBITS_ONE
 BYTESIZE = serial.EIGHTBITS
@@ -37,7 +37,7 @@ class serial_monitor():
 
 
     def auto_connect(self):
-        for i in range(0, 12):
+        for i in range(2, 5):
             try:
                 self.port = BASEPORT + str(i)
                 self.ser = serial.Serial(self.port, BAUD, BYTESIZE, PARITY, STOPBIT, timeout=10)

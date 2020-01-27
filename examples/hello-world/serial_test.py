@@ -4,102 +4,58 @@ import sys
 import argparse
 import serial
 from datetime import datetime
+from time import sleep
 
 LINES_TO_READ = 7000
 
 DEFAULT_FILE_NAME = "testos.txt"
 
-baseport = "/dev/ttyS"
-BAUD = 112500
+PORT = "/dev/ttyS2"
+BAUD = 115200
 PARITY = serial.PARITY_NONE
 STOPBIT = serial.STOPBITS_ONE
 BYTESIZE = serial.EIGHTBITS
 
-# ----------------------------------------------------------------------
-# Argument parser for selection output text file - where to store data
-# ----------------------------------------------------------------------
-parser = argparse.ArgumentParser(
-    description="Store serial input into given file.",
-    formatter_class=argparse.MetavarTypeHelpFormatter
-)
-parser.add_argument("-o", 
-                    "--output", 
-                    help="select file to store serial input", 
-                    type=str,
-                    required=False)
-parser.add_argument("-p", 
-                    "--port",   
-                    help="""select serial port [ttyUSBx]...if no port 
-                    given, program will find it automaticly""",
-                    type=str, 
-                    required=False)
 
-args = parser.parse_args()
+#ser = serial.Serial("/dev/ttyS2", BAUD, BYTESIZE, PARITY, STOPBIT)
+#print("Serial monitor opened on port: ttyS2")
 
-# ----------------------------------------------------------------------
-# Open serial monitor
-# ----------------------------------------------------------------------
-if(not args.port):
-    # Find port automaticly - search for ttyUSB
-    for i in range(1, 12):
-        try:
-            port = baseport + str(i)
-            ser = serial.Serial(port, BAUD, BYTESIZE, PARITY, STOPBIT)
-            print("Serial monitor opened on port: " + port)
-            break
-        except:
-            print("No serial port connected or all in use!..Exiting now")
-            sys.exit(1)
-else:
-    # Connect to given port
-    try:
-        port = "/dev/" + args.port
-        ser = serial.Serial(port, BAUD, BYTESIZE, PARITY, STOPBIT)
-        print("Serial monitor opened on port: " + port)
-    except:
-        print("Serial port not connected or in use!..Exiting now")
-        sys.exit(1)
+ser = serial.Serial()
+ser.baudrate = BAUD
+ser.port = PORT
+ser.parity = PARITY
+ser.stopbit = STOPBIT
+ser.bytesize = BYTESIZE
+ser.timeout = 5
 
 
-# ----------------------------------------------------------------------
-# Prepare output file
-# ----------------------------------------------------------------------
-if(not args.output):
-    filename = DEFAULT_FILE_NAME
-    print("Storing into default file: " + filename)
-else:
-    filename = args.output
-    print("Storing into: " + filename)
+ser.open()
 
-# (optional) Write first lines into it
-file = open(filename, mode="w", encoding="UTF-8")
-file.write(str(datetime.now())+"\n")
-file.write("----------------------------------------------------------------------------------------------- \n")
-file.write("Serial input from port:" + port + "\n")
-file.write("----------------------------------------------------------------------------------------------- \n")
-file.close()
+ser.setDTR(False)
+sleep(0.10)
+ser.setDTR(True)
+
+ser.flushInput()
+
+ser.flush()
+
+
+ser.send_break(1)
+
+
 
 print("Start logging serial input") 
 
-# Open file to append serial input to it
-file = open(filename, "a")
 
-# ----------------------------------------------------------------------
-# Read input lines while LINES_TO_READ or until stop sequence '='
-# ----------------------------------------------------------------------
 i = 1
 try:
     while(i <= LINES_TO_READ):
-        # Read one line (until \n char)
-        value = ser.read_until(b'\n', None)
-
-        # Store value into file
-        file.write("[" + str(datetime.now().time())+"]: ")
-        value= value.decode("UTF-8")
-        file.write(str(value))
-
+        # value = ser.read_until(b'\n', None)
+        # value = ser.readline()
+        value = ser.read(13)    #read 10 bytes
+        print(str(value))
         # Update status line in terminal
-        print("Line " + str(i) +"/(" + str(LINES_TO_READ) +")", end="\r")
+        print(str(i) + "\n")
         i += 1
     
     print("")
@@ -115,5 +71,4 @@ except IOError:
     print("\n Serial port disconnected!.. Exiting serial monitor")
 
 finally:
-    file.close()
     ser.close()
