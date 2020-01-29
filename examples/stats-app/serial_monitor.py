@@ -1,8 +1,14 @@
+# ----------------------------------------------------------------------
 # Monitor serial input from given port and store it into given file
-
+#
+# TODO: description
+#
+#
+# ----------------------------------------------------------------------
 import sys
 import argparse
 import serial
+import os
 from datetime import datetime
 from timeit import default_timer as timer
 
@@ -75,6 +81,12 @@ class serial_monitor():
                 sys.exit(1)
 
 
+    def flush(self):
+        self.ser.reset_input_buffer()
+        self.ser.reset_output_buffer()
+
+# ----------------------------------------------------------------------
+
     def prepare_file(self, filename):
         self.filename = filename
         self.file = open(filename, mode="w", encoding="UTF-8")
@@ -91,7 +103,14 @@ class serial_monitor():
         self.file.write("[" + str(datetime.now().time())+"]: ")
         data = data.decode("UTF-8")
         self.file.write(str(data))
-        
+
+
+    def rename_file(self, name):
+        os.rename(DEFAULT_FILE_NAME, DEFAULT_FILE_NAME[:-4] + 
+                  "_node_" + name + ".txt")
+        print("File renamed to:" + DEFAULT_FILE_NAME[:-4] + 
+                  "_node_" + name + ".txt")
+
 
     def close(self):
         self.ser.close()
@@ -167,6 +186,7 @@ monitor.wait_response(3)
 # If device is not responding, try again
 if(not monitor.gotResponse):
     print("No response -> send start cmd again...")
+    monitor.flush()
     monitor.send_cmd("=End")
     monitor.send_cmd(">Start")
     monitor.wait_response(3)
@@ -175,18 +195,32 @@ if(not monitor.gotResponse):
     print("No response...please reset the device and try again")
     sys.exit(1)
 
+print("Start logging serial input:") 
+
+# Open file to append serial input to it
+monitor.file = open(monitor.filename, "a")
+
 # ----------------------------------------------------------------------
-# Read input lines while LINES_TO_READ or until stop command '='
+# Get general info about the app
 # ----------------------------------------------------------------------
+
 # Get max duration of the app ("AD 1200")
 value = monitor.read_line()
 if((chr(value[0]) == 'A') and (chr(value[1])== 'D')):
     MAX_APP_TIME = int(value[3:])
 
-print("Start logging serial input:") 
+# Get a device ID (ex: Device ID: 0124B006D1)
+value = monitor.read_line()
+monitor.store_to_file(value)
 
-# Open file to append serial input to it
-monitor.file = open(monitor.filename, "a")
+id = value.decode("UTF-8").split(": ")
+if(str(id[0])== "Device ID"):
+    # Get only last 4 bytes
+    deviceID = id[1][-5:-1]
+
+# ----------------------------------------------------------------------
+# Read input lines while LINES_TO_READ or until app stops sending data
+# ----------------------------------------------------------------------
 
 line = 1
 startTime = timer()
@@ -252,3 +286,6 @@ except IOError:
 # ----------------------------------------------------------------------
 finally:
     monitor.close()
+    # Rename a file with device ID
+    if(not args.output):
+        monitor.rename_file(deviceID)
