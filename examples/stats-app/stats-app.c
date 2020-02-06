@@ -39,7 +39,7 @@
 
 /*---------------------------------------------------------------------------*/
 #define SECOND 		  (1000)
-#define MAX_APP_TIME  (SECOND*1200)
+#define MAX_APP_TIME  (SECOND * 180) // 3 min
 
 uint32_t counter = 0;
 extern uint8_t appIsRunning;
