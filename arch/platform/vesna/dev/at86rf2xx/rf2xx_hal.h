@@ -30,7 +30,7 @@
 // Maximum supported speed is 8MHz
 #define RF2XX_SPI_SPEED		((uint32_t)8000000)
 
-#define RSSI_BASE_VAL   	((int8_t)-91)
+#define RSSI_BASE_VAL   (-91)
 
 
 // Board specific configurations
@@ -128,12 +128,6 @@
 	#error "No pins have been defined for AT86RF2xx radio!"
 #endif
 
-
-// TODO: Separate CC and Atmel radio configs
-// Chip select pins for CC101 radio
-#define CC1101_CSN_PIN      (GPIO_Pin_9)
-#define CC1101_CSN_PORT     (GPIOB)
-
 typedef union {
 	struct {
 		uint8_t SLEEP:1;	// Indicate radio sleep state
@@ -227,14 +221,5 @@ int frameRead(rxFrame_t *frame);
 
 // Transfer frame to the radio
 int frameWrite(txFrame_t *frame);
-
-// CC1101 radio functions
-void CC1101_regWrite(uint8_t addr, uint8_t value);
-void CC1101_reset(void);
-void configure_cc1101(void);
-
-// Manipulate chip select (CS) pin of radio CC1101
-void CC1101_clear_CS(void);
-void CC1101_set_CS(void);
 
 #endif

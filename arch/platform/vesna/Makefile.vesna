@@ -58,10 +58,10 @@ TARGET_STARTFILES = ${addprefix $(OBJECTDIR)/,${call oname, $(TARGET_START_SOURC
 #TARGET_STARTFILES := ${addprefix $(OBJECTDIR)/, contiki-interrupts.o startup.o syscalls.o}
 
 
-CONTIKI_TARGET_DIRS += . cpu dev
+CONTIKI_TARGET_DIRS += . cpu dev dev/cc1101
 
-CONTIKI_TARGET_SOURCEFILES += platform.c vsndriversconf.c int-master.c
-CONTIKI_TARGET_SOURCEFILES += clock.c rtimer-arch.c uart1.c watchdog.c slip-arch.c
+CONTIKI_TARGET_SOURCEFILES += platform.c vsndriversconf.c int-master.c cc1101_hal.c
+CONTIKI_TARGET_SOURCEFILES += clock.c rtimer-arch.c uart1.c watchdog.c node-id.c slip-arch.c
 
 CONTIKI_SOURCEFILES += $(TARGET_START_SOURCEFILES) $(VSNDRIVERS_SOURCEFILES) $(CONTIKI_TARGET_SOURCEFILES)
 
@@ -94,7 +94,7 @@ endif
 ifdef AT86RF2XX_BOARD
 AT86RF2XX_BOARD_UPPER = $(shell echo "$(AT86RF2XX_BOARD)" | tr [a-z] [A-Z] | tr [.\ ] _)
 CONTIKI_TARGET_DIRS += dev/at86rf2xx 
-CONTIKI_TARGET_SOURCEFILES += rf2xx.c rf2xx_hal.c rf2xx_tsch.c
+CONTIKI_TARGET_SOURCEFILES += rf2xx.c rf2xx_hal.c rf2xx_tsch.c rf2xx_stats.c
 CFLAGS += -DAT86RF2XX
 CFLAGS += -DAT86RF2XX_BOARD_$(AT86RF2XX_BOARD_UPPER)
 CFLAGS += -DAT86RF2XX_BOARD_STRING=\"$(AT86RF2XX_BOARD_UPPER)\"
@@ -166,24 +166,18 @@ OBJDUMP_FLAGS += --disassemble --source --disassembler-options=force-thumb
 		-c "reset run" \
 		-c "shutdown"
 
-%.logatec3: %.$(TARGET)
-	$(OPENOCD) \
-		-f interface/sysfsgpio-lgtc.cfg \
-		-f target/stm32f1x.cfg \
-		-c "init" \
-		-c "reset halt" \
-		-c "poll" \
-		-c "flash write_image erase $< 0 elf" \
-		-c "verify_image $< 0 elf" \
-		-c "reset run" \
-		-c "shutdown"
-
 
 %.debug %.debug.olimex: %.$(TARGET)
 	$(Q)openocd \
-		-s $(ARCH_PATH)/platform/$(TARGET)/OpenOCD/ \
-		-f snc_olimex_gdb.cfg
-
+		-f interface/ftdi/olimex-arm-usb-ocd.cfg \
+		-f target/stm32f1x.cfg \
+		-c "reset_config none" \
+		-c "telnet_port 4444" \
+		-c "gdb_port 3333" \
+		-c "tcl_port 6666" \
+		-c "init" \
+		-c "reset init" \
+		-c "verify_ircapture disable" \
 
 %.gdb: %.$(TARGET)
 	$(Q)gdb-multiarch \

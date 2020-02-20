@@ -30,6 +30,11 @@
 #define RF2XX_STATS     (0)
 #else
 #define RF2XX_STATS     (RF2XX_CONF_STATS)
+    #ifndef STATS_CONF_PACKET_BUFF_CAPACITY
+    #define STATS_PACKET_BUFF_CAPACITY (20)
+    #else
+    #define STATS_PACKET_BUFF_CAPACITY (STATS_CONF_PACKET_BUFF_CAPACITY)
+    #endif
 #endif
 
 // Enable radio's auto acknowledge capabilities (extended mode)
@@ -109,32 +114,5 @@ int rf2xx_off(void);
 
 // Interrupt routine function
 void rf2xx_isr(void);
-
-
-enum {
-	rxDetected,
-	rxAddrMatch,
-	rxSuccess,
-	rxToStack,
-
-	txCount,
-	txSuccess,
-	txCollision,
-	txNoAck,
-
-	RF2XX_STATS_COUNT
-};
-
-
-#if RF2XX_STATS
-extern volatile uint32_t rf2xxStats[RF2XX_STATS_COUNT];
-#define RF2XX_STATS_GET(event)		rf2xxStats[event]
-#define RF2XX_STATS_ADD(event)		rf2xxStats[event]++
-#define RF2XX_STATS_RESET()    		memset(rf2xxStats, 0, sizeof(rf2xxStats[0]) * RF2XX_STATS_COUNT)
-#endif
-
-#define RF2XX_STATS_GET(event)		(0)
-#define RF2XX_STATS_ADD(event)
-#define RF2XX_STATS_RESET()
 
 #endif
