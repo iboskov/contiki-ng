@@ -1,5 +1,5 @@
 #include <stdio.h>
-
+#include <stdint.h>
 #include "sys/node-id.h"
 #include "lib/crc16.h"
 

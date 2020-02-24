@@ -16,7 +16,9 @@ VSNDRIVERS_DIRS_RELATIVE = \
 	FWLib/src \
 	CMSIS/src \
 	External/FatFS/inc \
-	External/FatFS/src
+	External/FatFS/src \
+	FWLib/USBFWLib/src \
+	FWLib/USBFWLib/inc
 
 VSNDRIVERS_DIRS = ${addprefix $(VSNDRIVERS)/, $(VSNDRIVERS_DIRS_RELATIVE)}
 
@@ -152,6 +154,19 @@ OBJDUMP_FLAGS += --disassemble --source --disassembler-options=force-thumb
 		-f interface/stlink-v2.cfg \
 		-f target/stm32f1x.cfg \
 		-c "adapter_khz 1000"
+
+
+%.logatec3: %.$(TARGET)
+	$(Q)openocd \
+		-f interface/sysfsgpio-lgtc.cfg \
+		-f target/stm32f1x.cfg \
+		-c "init" \
+		-c "reset halt" \
+		-c "poll" \
+		-c "flash write_image erase $< 0 elf" \
+		-c "verify_image $< 0 elf" \
+		-c "reset run" \
+		-c "shutdown"
 
 
 %.olimex: %.$(TARGET)
